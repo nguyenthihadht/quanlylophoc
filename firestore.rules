@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only allow read and write access to the specific collection used by EduTrack AI
+    match /edu_track_ai/{document} {
+      allow read, write: if true;
+    }
+    
+    // Block all other collections by default to ensure database security
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
