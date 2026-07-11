@@ -3,8 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup } from '../types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore } from '../types';
 import { loadStateFromFirestore, saveStateToFirestore } from './firebase';
+
+function generateUniqueId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
 
 // Default mock database state in case server is loading or offline
 const DEFAULT_STATE = {
@@ -15,10 +19,13 @@ const DEFAULT_STATE = {
   lessons: [] as Lesson[],
   assessments: [] as Assessment[],
   comments: [] as Comment[],
+  scores: [] as SemesterScore[],
   settings: {
     schoolName: 'Trường Tiểu học Thuận Giao',
     teacherName: 'Cô Nguyễn Thị Hà',
-    theme: 'light' as 'light' | 'dark'
+    theme: 'light' as 'light' | 'dark',
+    adminPassword: '123456',
+    requirePassword: true
   } as AppSettings
 };
 
@@ -40,6 +47,46 @@ export class ClassTrackerAPI {
     this.onStateChangeListeners.forEach(listener => listener());
   }
 
+  private static sanitizeDuplicateStudentIds() {
+    if (!this.cache || !this.cache.students) return;
+    const seenIds = new Set<string>();
+    const duplicates = new Set<string>();
+    
+    this.cache.students.forEach(s => {
+      if (seenIds.has(s.id)) {
+        duplicates.add(s.id);
+      } else {
+        seenIds.add(s.id);
+      }
+    });
+
+    if (duplicates.size === 0) return;
+
+    console.log(`Sanitizing database: found duplicates for student IDs:`, Array.from(duplicates));
+
+    const usedIds = new Set(this.cache.students.map(s => s.id));
+    const processedIds = new Set<string>();
+    
+    this.cache.students = this.cache.students.map((s, index) => {
+      if (processedIds.has(s.id)) {
+        let newId = s.id;
+        while (true) {
+          newId = `student_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`;
+          if (!usedIds.has(newId)) {
+            break;
+          }
+        }
+        usedIds.add(newId);
+        return { ...s, id: newId };
+      } else {
+        processedIds.add(s.id);
+        return s;
+      }
+    });
+
+    this.persist();
+  }
+
   // Load complete state from Firestore (with server and LocalStorage as robust fallbacks)
   public static async init() {
     // 1. Try Firestore first
@@ -48,7 +95,8 @@ export class ClassTrackerAPI {
       if (firestoreData && Object.keys(firestoreData).length > 0) {
         this.cache = firestoreData;
         this.isLoaded = true;
-        localStorage.setItem('class_tracker_backup', JSON.stringify(firestoreData));
+        this.sanitizeDuplicateStudentIds();
+        localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
         this.notify();
         return this.cache;
       }
@@ -63,6 +111,7 @@ export class ClassTrackerAPI {
         const data = await response.json();
         this.cache = data;
         this.isLoaded = true;
+        this.sanitizeDuplicateStudentIds();
         // Save to LocalStorage as a local backup copy
         localStorage.setItem('class_tracker_backup', JSON.stringify(data));
         this.notify();
@@ -78,6 +127,7 @@ export class ClassTrackerAPI {
       try {
         this.cache = JSON.parse(local);
         this.isLoaded = true;
+        this.sanitizeDuplicateStudentIds();
         this.notify();
         return this.cache;
       } catch (e) {
@@ -88,6 +138,7 @@ export class ClassTrackerAPI {
     // Default or seed data
     this.cache = { ...DEFAULT_STATE };
     this.isLoaded = true;
+    this.sanitizeDuplicateStudentIds();
     this.notify();
     return this.cache;
   }
@@ -157,7 +208,7 @@ export class ClassTrackerAPI {
     const years = this.getSchoolYears();
     const isCurrent = years.length === 0; // default current if first
     const newYear: SchoolYear = {
-      id: 'year_' + Date.now(),
+      id: generateUniqueId('year'),
       name,
       isCurrent
     };
@@ -195,7 +246,7 @@ export class ClassTrackerAPI {
 
   public static addGrade(name: string): Grade {
     const newGrade: Grade = {
-      id: 'grade_' + Date.now(),
+      id: generateUniqueId('grade'),
       name
     };
     this.cache.grades = [...this.getGrades(), newGrade];
@@ -227,7 +278,7 @@ export class ClassTrackerAPI {
 
   public static addClass(name: string, gradeId: string, homeroomTeacher?: string): Class {
     const newClass: Class = {
-      id: 'class_' + Date.now(),
+      id: generateUniqueId('class'),
       name,
       gradeId,
       homeroomTeacher
@@ -257,7 +308,7 @@ export class ClassTrackerAPI {
   public static addStudent(student: Omit<Student, 'id'>): Student {
     const newStudent: Student = {
       ...student,
-      id: 'student_' + Date.now()
+      id: generateUniqueId('student')
     };
     this.cache.students = [...this.getStudents(), newStudent];
     this.persist();
@@ -285,7 +336,7 @@ export class ClassTrackerAPI {
   public static addLesson(lesson: Omit<Lesson, 'id'>): Lesson {
     const newLesson: Lesson = {
       ...lesson,
-      id: 'lesson_' + Date.now()
+      id: generateUniqueId('lesson')
     };
     this.cache.lessons = [...this.getLessons(), newLesson];
     this.persist();
@@ -313,7 +364,7 @@ export class ClassTrackerAPI {
     const currentAssessments = this.getAssessments().filter(a => a.lessonId !== lessonId);
     
     const newAssessments: Assessment[] = studentAssessments.map((sa, idx) => ({
-      id: `assess_${lessonId}_${sa.studentId || idx}_${Date.now()}`,
+      id: `assess_${lessonId}_${sa.studentId || idx}_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
       lessonId,
       date,
       studentId: sa.studentId,
@@ -334,7 +385,7 @@ export class ClassTrackerAPI {
 
   public static addComment(studentId: string, content: string, type: 'AI' | 'Thủ công'): Comment {
     const newComment: Comment = {
-      id: 'comment_' + Date.now(),
+      id: generateUniqueId('comment'),
       studentId,
       content,
       createdBy: this.cache.settings?.teacherName || 'Giáo viên',
@@ -349,6 +400,39 @@ export class ClassTrackerAPI {
   public static deleteComment(id: string): void {
     this.cache.comments = this.getComments().filter(c => c.id !== id);
     this.persist();
+  }
+
+  // Scores
+  public static getScores(): SemesterScore[] {
+    return this.cache.scores || [];
+  }
+
+  public static addOrUpdateScore(studentId: string, semester: 'Cuối học kỳ 1' | 'Cuối học kỳ 2', score: number): SemesterScore {
+    if (!this.cache.scores) {
+      this.cache.scores = [];
+    }
+    const existingIndex = this.cache.scores.findIndex(s => s.studentId === studentId && s.semester === semester);
+    const date = new Date().toISOString().split('T')[0];
+    if (existingIndex > -1) {
+      this.cache.scores[existingIndex] = {
+        ...this.cache.scores[existingIndex],
+        score,
+        date
+      };
+      this.persist();
+      return this.cache.scores[existingIndex];
+    } else {
+      const newScore: SemesterScore = {
+        id: generateUniqueId('score'),
+        studentId,
+        semester,
+        score,
+        date
+      };
+      this.cache.scores = [...this.cache.scores, newScore];
+      this.persist();
+      return newScore;
+    }
   }
 
   // Settings
@@ -378,6 +462,7 @@ export class ClassTrackerAPI {
       lessons: this.getLessons(),
       assessments: this.getAssessments(),
       comments: this.getComments(),
+      scores: this.getScores(),
       settings: this.getSettings(),
       backupDate: new Date().toISOString()
     };
@@ -401,10 +486,13 @@ export class ClassTrackerAPI {
           lessons: backup.lessons || [],
           assessments: backup.assessments || [],
           comments: backup.comments || [],
+          scores: backup.scores || [],
           settings: backup.settings || {
             schoolName: 'Trường Tiểu học Thuận Giao',
             teacherName: 'Cô Nguyễn Thị Hà',
-            theme: 'light'
+            theme: 'light',
+            adminPassword: '123456',
+            requirePassword: true
           }
         };
         this.persist();
@@ -424,6 +512,7 @@ export class ClassTrackerAPI {
     const clazz = this.getClasses().find(c => c.id === student.classId);
     const grade = clazz ? this.getGrades().find(g => g.id === clazz.gradeId) : null;
     const studentAssessments = this.getAssessments().filter(a => a.studentId === studentId);
+    const studentScores = (this.cache.scores || []).filter(s => s.studentId === studentId);
 
     // Short summary of recent grades
     const assessmentsSummary = studentAssessments.slice(-5).map(a => ({
@@ -443,6 +532,7 @@ export class ClassTrackerAPI {
           gradeName: grade?.name || 'Chưa rõ',
           className: clazz?.name || 'Chưa rõ',
           assessments: assessmentsSummary,
+          scores: studentScores.map(s => ({ semester: s.semester, score: s.score })),
           notes: student.note
         })
       });
@@ -459,13 +549,17 @@ export class ClassTrackerAPI {
       const completions = studentAssessments.map(a => a.completion);
       const isGood = completions.filter(c => c === 'Hoàn thành tốt').length >= completions.length * 0.5;
       const isOk = completions.filter(c => c === 'Hoàn thành').length >= completions.length * 0.4;
+      
+      const scoreStr = studentScores.length > 0 
+        ? ` (Điểm thi: ${studentScores.map(s => `${s.semester}: ${s.score}/10`).join(', ')})`
+        : '';
 
       if (isGood) {
-        return `Em ${student.name} có nhận thức rất nhanh nhạy về môn Tin học. Trong học kỳ qua, em hoàn thành xuất sắc các nội dung thực hành gõ phím và kỹ năng thực tế, tích cực giúp đỡ bạn bè xung quanh học tập.`;
+        return `Em ${student.name} có nhận thức rất nhanh nhạy về môn Tin học. Trong học kỳ qua, em hoàn thành xuất sắc các nội dung thực hành gõ phím và kỹ năng thực tế, tích cực giúp đỡ bạn bè xung quanh học tập.${scoreStr}`;
       } else if (isOk || completions.length === 0) {
-        return `Em ${student.name} chăm ngoan, hoàn thành đầy đủ bài thực hành trên lớp. Kỹ năng máy tính đạt yêu cầu chuẩn kiến thức kỹ năng tiểu học, chú ý nghe cô giảng bài.`;
+        return `Em ${student.name} chăm ngoan, hoàn thành đầy đủ bài thực hành trên lớp. Kỹ năng máy tính đạt yêu cầu chuẩn kiến thức kỹ năng tiểu học, chú ý nghe cô giảng bài.${scoreStr}`;
       } else {
-        return `Em ${student.name} cần chú ý tập trung hơn trong giờ học thực hành máy tính. Em vẫn hoàn thành bài nhưng kỹ năng gõ phím còn chậm, cần rèn luyện thêm.`;
+        return `Em ${student.name} cần chú ý tập trung hơn trong giờ học thực hành máy tính. Em vẫn hoàn thành bài nhưng kỹ năng gõ phím còn chậm, cần rèn luyện thêm.${scoreStr}`;
       }
     }
   }

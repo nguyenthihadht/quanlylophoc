@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Save, Download, Upload, Check, RefreshCw, Star, Info, Moon, Sun, AlertTriangle, Database, Cloud } from 'lucide-react';
+import { Save, Download, Upload, Check, RefreshCw, Star, Info, Moon, Sun, AlertTriangle, Database, Cloud, Eye, EyeOff } from 'lucide-react';
 import { AppSettings } from '../types';
 import { ClassTrackerAPI } from '../lib/api';
 
@@ -23,6 +23,9 @@ export function BackupSettings({
 }: BackupSettingsProps) {
   const [schoolName, setSchoolName] = useState(settings.schoolName);
   const [teacherName, setTeacherName] = useState(settings.teacherName);
+  const [adminPassword, setAdminPassword] = useState(settings.adminPassword || '123456');
+  const [requirePassword, setRequirePassword] = useState(settings.requirePassword !== false);
+  const [showAdminPass, setShowAdminPass] = useState(false);
   
   const [isSaved, setIsSaved] = useState(false);
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -31,7 +34,9 @@ export function BackupSettings({
     e.preventDefault();
     onUpdateSettings({
       schoolName: schoolName.trim(),
-      teacherName: teacherName.trim()
+      teacherName: teacherName.trim(),
+      adminPassword: adminPassword.trim(),
+      requirePassword: requirePassword
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
@@ -134,7 +139,7 @@ export function BackupSettings({
               type="text"
               value={schoolName}
               onChange={(e) => setSchoolName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-blue-500/20 transition-all outline-none shadow-xs"
               required
             />
           </div>
@@ -145,9 +150,44 @@ export function BackupSettings({
               type="text"
               value={teacherName}
               onChange={(e) => setTeacherName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-blue-500/20 transition-all outline-none shadow-xs"
               required
             />
+          </div>
+
+          <div className="pt-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase mb-1.5">Mật khẩu Quản trị viên (Mặc định: 123456)</label>
+            <div className="relative">
+              <input
+                type={showAdminPass ? 'text' : 'password'}
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm outline-none focus:ring-2 focus:ring-blue-500/20 pr-10 font-mono shadow-xs placeholder-slate-400"
+                required
+                placeholder="Nhập mật khẩu quản trị viên"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminPass(!showAdminPass)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+              >
+                {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Sử dụng mật khẩu này để khóa ứng dụng bảo mật thông tin học sinh.</p>
+          </div>
+
+          <div className="flex items-center gap-2.5 py-1">
+            <input
+              type="checkbox"
+              id="require-password-checkbox"
+              checked={requirePassword}
+              onChange={(e) => setRequirePassword(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-slate-300 rounded-sm focus:ring-blue-500 cursor-pointer"
+            />
+            <label htmlFor="require-password-checkbox" className="text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+              Yêu cầu mật khẩu khi mở ứng dụng
+            </label>
           </div>
 
           <button

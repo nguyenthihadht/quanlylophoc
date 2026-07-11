@@ -167,7 +167,7 @@ export function SchoolManager({
                   placeholder="Ví dụ: 2026-2027"
                   value={yearName}
                   onChange={(e) => setYearName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none shadow-xs"
                   required
                 />
               </div>
@@ -207,7 +207,7 @@ export function SchoolManager({
                   placeholder="Ví dụ: Khối 3"
                   value={gradeName}
                   onChange={(e) => setGradeName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none shadow-xs"
                   required
                 />
               </div>
@@ -246,7 +246,7 @@ export function SchoolManager({
                 <select
                   value={classGradeId}
                   onChange={(e) => setClassGradeId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none shadow-xs"
                   required
                 >
                   <option value="">-- Chọn Khối lớp --</option>
@@ -263,7 +263,7 @@ export function SchoolManager({
                   placeholder="Ví dụ: 3A1"
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none shadow-xs"
                   required
                 />
               </div>
@@ -275,7 +275,7 @@ export function SchoolManager({
                   placeholder="Ví dụ: Cô Lê Thị Mai"
                   value={classTeacher}
                   onChange={(e) => setClassTeacher(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm placeholder-slate-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none shadow-xs"
                 />
               </div>
 
@@ -425,16 +425,17 @@ export function SchoolManager({
                   {classes.map((c) => {
                     const gradeName = grades.find(g => g.id === c.gradeId)?.name || 'Khác';
                     return (
-                      <div key={c.id} className="p-4 bg-slate-50 dark:bg-slate-750/70 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-150 dark:border-slate-750 rounded-2xl flex flex-col justify-between transition-all">
+                      <div key={c.id} className="p-4 bg-slate-900 dark:bg-slate-950 border border-slate-800 dark:border-slate-850 rounded-2xl flex flex-col justify-between transition-all shadow-md">
                         <div>
                           <div className="flex justify-between items-start">
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-500/20 text-blue-300 border border-blue-500/30">
                               {gradeName}
                             </span>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1.5">
                               <button
                                 onClick={() => startEditClass(c)}
-                                className="p-1 text-slate-500 hover:text-blue-600 dark:text-slate-450 dark:hover:text-blue-400 transition-all cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-white dark:text-slate-400 dark:hover:text-white transition-all cursor-pointer"
+                                title="Sửa lớp"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
@@ -444,15 +445,16 @@ export function SchoolManager({
                                     onDeleteClass(c.id);
                                   }
                                 }}
-                                className="p-1 text-slate-500 hover:text-rose-600 dark:text-slate-450 dark:hover:text-rose-400 transition-all cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-rose-400 dark:text-slate-400 dark:hover:text-rose-400 transition-all cursor-pointer"
+                                title="Xóa lớp"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>
-                          <h4 className="font-bold text-slate-800 dark:text-slate-100 text-lg mt-2">Lớp {c.name}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 flex items-center gap-1">
-                            GVCN: <span className="font-semibold text-slate-700 dark:text-slate-300">{c.homeroomTeacher || 'Chưa thiết lập'}</span>
+                          <h4 className="font-black text-white text-xl mt-3 tracking-tight">Lớp {c.name}</h4>
+                          <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+                            GVCN: <span className="font-bold text-amber-300 bg-slate-800 dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700/60">{c.homeroomTeacher || 'Chưa thiết lập'}</span>
                           </p>
                         </div>
                       </div>

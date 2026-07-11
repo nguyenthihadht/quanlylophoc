@@ -38,6 +38,11 @@ export function StudentManager({
   // Modals & Form states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [isMoveClassOpen, setIsMoveClassOpen] = useState(false);
+  const [bulkClassId, setBulkClassId] = useState('');
 
   // Student Form Inputs
   const [studentIdInput, setStudentIdInput] = useState('');
@@ -194,7 +199,7 @@ export function StudentManager({
               placeholder="Tìm theo mã hoặc tên học sinh..."
               value={searchTerm}
               onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium placeholder-slate-450 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all shadow-xs"
             />
           </div>
 
@@ -202,7 +207,7 @@ export function StudentManager({
           <select
             value={selectedClassId}
             onChange={(e) => { setSelectedClassId(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-3 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
           >
             <option value="">Tất cả Lớp</option>
             {classes.map(c => {
@@ -217,7 +222,7 @@ export function StudentManager({
           <select
             value={selectedGender}
             onChange={(e) => { setSelectedGender(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-3 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
           >
             <option value="">Giới tính</option>
             <option value="Nam">Nam</option>
@@ -248,6 +253,44 @@ export function StudentManager({
         </div>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div id="bulk-action-bar" className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/60 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+            <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">
+              Đã chọn <strong className="font-extrabold text-blue-900 dark:text-blue-100">{selectedIds.length}</strong> học sinh
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all cursor-pointer"
+            >
+              Bỏ chọn tất cả
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBulkClassId(classes[0]?.id || '');
+                setIsMoveClassOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+            >
+              Chuyển lớp hàng loạt
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteOpen(true)}
+              className="px-3 py-1.5 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Xóa đã chọn ({selectedIds.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Table Panel */}
       <div id="students-table-panel" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs overflow-hidden">
         {filteredStudents.length === 0 ? (
@@ -260,6 +303,27 @@ export function StudentManager({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-750/60 border-b border-slate-150 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-4 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedIds.includes(s.id))}
+                      onChange={(e) => {
+                        const pageIds = paginatedStudents.map(s => s.id);
+                        if (e.target.checked) {
+                          setSelectedIds(prev => {
+                            const union = [...prev];
+                            pageIds.forEach(id => {
+                              if (!union.includes(id)) union.push(id);
+                            });
+                            return union;
+                          });
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => !pageIds.includes(id)));
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4">Mã Học sinh</th>
                   <th className="px-6 py-4">Họ và tên</th>
                   <th className="px-6 py-4">Giới tính</th>
@@ -273,8 +337,23 @@ export function StudentManager({
                 {paginatedStudents.map((s) => {
                   const sClass = classes.find(c => c.id === s.classId);
                   const sGrade = sClass ? grades.find(g => g.id === sClass.gradeId) : null;
+                  const isSelected = selectedIds.includes(s.id);
                   return (
-                    <tr key={s.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-750/30 transition-all">
+                    <tr key={s.id} className={`hover:bg-slate-50/50 dark:hover:bg-slate-750/30 transition-all ${isSelected ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+                      <td className="px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedIds(prev =>
+                              prev.includes(s.id)
+                                ? prev.filter(id => id !== s.id)
+                                : [...prev, s.id]
+                            );
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-6 py-4 font-mono font-semibold text-slate-600 dark:text-slate-400">{s.studentId}</td>
                       <td className="px-6 py-4 font-semibold text-slate-800 dark:text-slate-100">{s.name}</td>
                       <td className="px-6 py-4">
@@ -300,11 +379,7 @@ export function StudentManager({
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Bạn có chắc chắn muốn xóa học sinh ${s.name}? Toàn bộ lịch sử đánh giá của em cũng sẽ bị xóa.`)) {
-                              onDeleteStudent(s.id);
-                            }
-                          }}
+                          onClick={() => setStudentToDelete(s)}
                           className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -373,7 +448,7 @@ export function StudentManager({
                 <select
                   value={importClassId}
                   onChange={(e) => setImportClassId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
                   required
                 >
                   <option value="">-- Chọn lớp học --</option>
@@ -402,7 +477,7 @@ export function StudentManager({
                   placeholder="Mã học sinh,Họ tên,Giới tính,Ngày sinh,Ghi chú&#10;HS001,Nguyễn Văn An,Nam,2017-05-15,Chăm ngoan&#10;HS002,Trần Thị Bình,Nữ,2017-10-20,Đạt tốt"
                   value={csvRawText}
                   onChange={(e) => setCsvRawText(e.target.value)}
-                  className="w-full h-36 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 font-mono text-xs focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                  className="w-full h-36 p-3 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-xs focus:ring-2 focus:ring-blue-500/20 outline-none resize-none shadow-xs"
                   required={!csvRawText}
                 ></textarea>
               </div>
@@ -463,7 +538,7 @@ export function StudentManager({
                   placeholder="Ví dụ: HS001 (Sẽ tự tạo nếu bỏ trống)"
                   value={studentIdInput}
                   onChange={(e) => setStudentIdInput(e.target.value)}
-                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs placeholder-slate-400"
                 />
               </div>
 
@@ -474,7 +549,7 @@ export function StudentManager({
                   placeholder="Ví dụ: Nguyễn Minh Khang"
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
-                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs placeholder-slate-400"
                   required
                 />
               </div>
@@ -485,7 +560,7 @@ export function StudentManager({
                   <select
                     value={studentGender}
                     onChange={(e) => setStudentGender(e.target.value as 'Nam' | 'Nữ')}
-                    className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full px-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
                   >
                     <option value="Nam">Nam</option>
                     <option value="Nữ">Nữ</option>
@@ -498,7 +573,7 @@ export function StudentManager({
                     type="date"
                     value={studentDob}
                     onChange={(e) => setStudentDob(e.target.value)}
-                    className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full px-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
                     required
                   />
                 </div>
@@ -509,7 +584,7 @@ export function StudentManager({
                 <select
                   value={studentClassId}
                   onChange={(e) => setStudentClassId(e.target.value)}
-                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
                   required
                 >
                   <option value="">-- Chọn lớp học --</option>
@@ -525,7 +600,7 @@ export function StudentManager({
                   placeholder="Ghi chú về học sinh này..."
                   value={studentNote}
                   onChange={(e) => setStudentNote(e.target.value)}
-                  className="w-full h-20 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                  className="w-full h-20 p-3 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none shadow-xs placeholder-slate-400"
                 ></textarea>
               </div>
 
@@ -545,6 +620,161 @@ export function StudentManager({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {studentToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-55 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl max-w-md w-full p-6 space-y-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                  Xác nhận xóa học sinh
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Bạn có chắc chắn muốn xóa học sinh <strong className="text-slate-850 dark:text-slate-100">{studentToDelete.name}</strong> ({studentToDelete.studentId}) không?
+                </p>
+                <div className="text-xs text-rose-600 dark:text-rose-400 font-semibold bg-rose-50/50 dark:bg-rose-950/20 p-2.5 rounded-lg border border-rose-100/50 dark:border-rose-900/30 flex gap-2 items-start mt-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Chú ý: Toàn bộ lịch sử nhận xét học bạ, đánh giá buổi học và thành tích của học sinh này sẽ bị xóa vĩnh viễn khỏi hệ thống và không thể khôi phục.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold border border-slate-250 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteStudent(studentToDelete.id);
+                  setStudentToDelete(null);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl cursor-pointer shadow-xs"
+              >
+                Đồng ý xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Bulk Delete Confirmation Modal */}
+      {isBulkDeleteOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-55 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl max-w-md w-full p-6 space-y-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                  Xác nhận xóa {selectedIds.length} học sinh
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Bạn có chắc chắn muốn xóa <strong className="text-slate-850 dark:text-slate-100">{selectedIds.length} học sinh</strong> đã chọn không?
+                </p>
+                <div className="text-xs text-rose-600 dark:text-rose-400 font-semibold bg-rose-50/50 dark:bg-rose-950/20 p-2.5 rounded-lg border border-rose-100/50 dark:border-rose-900/30 flex gap-2 items-start mt-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Chú ý: Toàn bộ lịch sử nhận xét học bạ, đánh giá buổi học và thành tích của tất cả các học sinh này sẽ bị xóa vĩnh viễn khỏi hệ thống và không thể khôi phục.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteOpen(false)}
+                className="px-4 py-2 text-xs font-semibold border border-slate-250 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  selectedIds.forEach(id => onDeleteStudent(id));
+                  setSelectedIds([]);
+                  setIsBulkDeleteOpen(false);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl cursor-pointer shadow-xs"
+              >
+                Đồng ý xóa tất cả
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Bulk Move Class Modal */}
+      {isMoveClassOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-55 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl max-w-md w-full p-6 space-y-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Plus className="w-6 h-6 rotate-45" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                  Chuyển lớp hàng loạt
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Chọn lớp học mới cho <strong className="text-slate-850 dark:text-slate-100">{selectedIds.length} học sinh</strong> đã chọn:
+                </p>
+                
+                <div className="mt-3">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Lớp học đích</label>
+                  <select
+                    value={bulkClassId}
+                    onChange={(e) => setBulkClassId(e.target.value)}
+                    className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
+                    required
+                  >
+                    <option value="">-- Chọn lớp học đích --</option>
+                    {classes.map(c => {
+                      const gradeName = grades.find(g => g.id === c.gradeId)?.name || '';
+                      return (
+                        <option key={c.id} value={c.id}>{c.name} ({gradeName})</option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setIsMoveClassOpen(false)}
+                className="px-4 py-2 text-xs font-semibold border border-slate-250 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={!bulkClassId}
+                onClick={() => {
+                  if (!bulkClassId) return;
+                  selectedIds.forEach(id => {
+                    onUpdateStudent(id, { classId: bulkClassId });
+                  });
+                  setSelectedIds([]);
+                  setIsMoveClassOpen(false);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl cursor-pointer shadow-xs"
+              >
+                Xác nhận chuyển
+              </button>
+            </div>
           </div>
         </div>
       )}

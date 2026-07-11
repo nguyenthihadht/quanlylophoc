@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { User, Search, Award, Sparkles, BookOpen, Clock, Heart, Edit2, Check, RefreshCw, AlertCircle, Calendar, Trash2 } from 'lucide-react';
+import { User, Users, Search, Award, Sparkles, BookOpen, Clock, Heart, Edit2, Check, RefreshCw, AlertCircle, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Class, Student, Assessment, Comment, Grade } from '../types';
 
 interface StudentPortfolioProps {
@@ -38,6 +38,89 @@ export function StudentPortfolio({
 
   // Manual comments state
   const [manualText, setManualText] = useState('');
+
+  // Bulk AI Generation state
+  const [aiMode, setAiMode] = useState<'single' | 'bulk'>('single');
+  const [bulkClassId, setBulkClassId] = useState<string>(classes[0]?.id || '');
+  const [bulkSelectedStudentIds, setBulkSelectedStudentIds] = useState<string[]>(() => {
+    const firstClassId = classes[0]?.id;
+    return firstClassId ? students.filter(s => s.classId === firstClassId).map(s => s.id) : [];
+  });
+  const [isBulkGenerating, setIsBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [bulkGeneratingId, setBulkGeneratingId] = useState<string | null>(null);
+  const [bulkGeneratedComments, setBulkGeneratedComments] = useState<Record<string, string>>({});
+  const [bulkErrorText, setBulkErrorText] = useState('');
+  const [bulkSuccessMsg, setBulkSuccessMsg] = useState('');
+
+  const handleBulkClassChange = (classId: string) => {
+    setBulkClassId(classId);
+    const classStudents = students.filter(s => s.classId === classId);
+    setBulkSelectedStudentIds(classStudents.map(s => s.id));
+    setBulkGeneratedComments({});
+    setBulkErrorText('');
+    setBulkSuccessMsg('');
+    setBulkProgress(null);
+  };
+
+  const toggleBulkStudentSelect = (studentId: string) => {
+    setBulkSelectedStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId) 
+        : [...prev, studentId]
+    );
+  };
+
+  const toggleSelectAllBulkStudents = (allIds: string[]) => {
+    if (bulkSelectedStudentIds.length === allIds.length) {
+      setBulkSelectedStudentIds([]);
+    } else {
+      setBulkSelectedStudentIds(allIds);
+    }
+  };
+
+  const handleTriggerBulkAIComments = async () => {
+    if (bulkSelectedStudentIds.length === 0) return;
+    setIsBulkGenerating(true);
+    setBulkErrorText('');
+    setBulkSuccessMsg('');
+    setBulkProgress({ current: 0, total: bulkSelectedStudentIds.length });
+    
+    const results: Record<string, string> = { ...bulkGeneratedComments };
+    
+    for (let i = 0; i < bulkSelectedStudentIds.length; i++) {
+      const studentId = bulkSelectedStudentIds[i];
+      setBulkGeneratingId(studentId);
+      setBulkProgress({ current: i + 1, total: bulkSelectedStudentIds.length });
+      
+      try {
+        const remark = await onGenerateAIComment(studentId);
+        results[studentId] = remark;
+        setBulkGeneratedComments({ ...results });
+      } catch (err: any) {
+        console.error(`Failed to generate AI comment for ${studentId}:`, err);
+        results[studentId] = 'Không thể tạo nhận xét bằng AI cho học sinh này. Vui lòng thử lại.';
+        setBulkGeneratedComments({ ...results });
+      }
+    }
+    
+    setBulkGeneratingId(null);
+    setIsBulkGenerating(false);
+  };
+
+  const handleSaveAllBulkComments = () => {
+    let savedCount = 0;
+    (Object.entries(bulkGeneratedComments) as [string, string][]).forEach(([studentId, commentText]) => {
+      if (commentText && commentText.trim() && !commentText.includes('Không thể tạo nhận xét')) {
+        onAddComment(studentId, commentText.trim(), 'AI');
+        savedCount++;
+      }
+    });
+    setBulkGeneratedComments({});
+    setBulkProgress(null);
+    setBulkSuccessMsg(`Đã lưu thành công ${savedCount} nhận xét AI vào Sổ nhận xét học kỳ!`);
+    setTimeout(() => setBulkSuccessMsg(''), 5000);
+  };
 
   // Selected Student calculations
   const currentStudent = students.find(s => s.id === selectedStudentId);
@@ -114,7 +197,7 @@ export function StudentPortfolio({
     <div id="student-portfolio-container" className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       
       {/* 1. Left Sidebar: Student Selection list */}
-      <div id="portfolio-roster" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs lg:col-span-1 h-max space-y-4 vibrant-card">
+      <div id="portfolio-roster" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs lg:col-span-1 h-max space-y-4 vibrant-card">
         <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm font-display">Danh Sách Học Sinh</h3>
         
         {/* Quick Search */}
@@ -125,7 +208,7 @@ export function StudentPortfolio({
             placeholder="Tìm theo mã hoặc tên..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
+            className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none"
           />
         </div>
 
@@ -148,7 +231,7 @@ export function StudentPortfolio({
                   className={`w-full p-2.5 rounded-xl text-left transition-all border flex items-center gap-3 cursor-pointer ${
                     active 
                       ? 'bg-blue-600 border-blue-600 text-white shadow-xs' 
-                      : 'border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300'
+                      : 'border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   <div className={`p-1.5 rounded-lg ${active ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
@@ -173,7 +256,7 @@ export function StudentPortfolio({
         {currentStudent ? (
           <>
             {/* Student Info Hero card */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6 vibrant-card">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6 vibrant-card">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-700 text-white font-black rounded-2xl flex items-center justify-center text-xl shadow-sm uppercase font-display">
                   {currentStudent.name.slice(-2)}
@@ -200,11 +283,11 @@ export function StudentPortfolio({
                 <div className="text-center">
                   <div className="relative inline-flex items-center justify-center">
                     <svg className="w-16 h-16 transform -rotate-90">
-                      <circle cx="32" cy="32" r="28" className="stroke-slate-100 dark:stroke-slate-750" strokeWidth="4" fill="none" />
+                      <circle cx="32" cy="32" r="28" className="stroke-slate-100 dark:stroke-slate-700" strokeWidth="4" fill="none" />
                       <circle cx="32" cy="32" r="28" className="stroke-blue-500" strokeWidth="4" fill="none" 
                         strokeDasharray={176} strokeDashoffset={176 - (176 * completionRate) / 100} />
                     </svg>
-                    <span className="absolute text-sm font-black text-slate-850 dark:text-slate-100">{completionRate}%</span>
+                    <span className="absolute text-sm font-black text-slate-800 dark:text-slate-100">{completionRate}%</span>
                   </div>
                   <p className="text-[10px] font-semibold text-slate-400 uppercase mt-1">Hoàn thành</p>
                 </div>
@@ -219,71 +302,278 @@ export function StudentPortfolio({
 
             {/* AI Report Remark Generator Box */}
             <div className="bg-gradient-to-r from-blue-500/5 to-indigo-500/5 dark:from-slate-800 dark:to-slate-800 p-6 rounded-2xl border border-blue-100/50 dark:border-slate-700 shadow-xs space-y-4 vibrant-card ai-glow">
-              <div className="flex justify-between items-center gap-4 flex-wrap">
-                <div>
-                  <h3 className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 text-base font-display">
-                    <Sparkles className="w-5 h-5 text-blue-500" /> ✨ Tạo Nhận Xét Cuối Kỳ Bằng Gemini AI
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    AI sẽ tổng hợp toàn bộ {totalLessonsCount} buổi đánh giá và ghi chú cá nhân để viết nhận xét cực kỳ khách quan.
-                  </p>
-                </div>
-
+              {/* Tab Selector */}
+              <div className="flex border-b border-blue-100 dark:border-slate-750 pb-2 gap-4">
                 <button
-                  onClick={handleTriggerAIComment}
-                  disabled={isGenerating || totalLessonsCount === 0}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                  type="button"
+                  onClick={() => setAiMode('single')}
+                  className={`pb-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                    aiMode === 'single'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
                 >
-                  {isGenerating ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" /> Đang nhận xét...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" /> Sinh nhận xét AI
-                    </>
-                  )}
+                  <User className="w-4 h-4" /> Cá nhân em {currentStudent?.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiMode('bulk')}
+                  className={`pb-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                    aiMode === 'bulk'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <Users className="w-4 h-4" /> Tạo cả lớp (Hàng loạt)
                 </button>
               </div>
 
-              {/* Show error */}
-              {errorText && (
-                <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-500" /> {errorText}
-                </div>
-              )}
+              {aiMode === 'single' ? (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center gap-4 flex-wrap">
+                    <div>
+                      <h3 className="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5 text-base font-display">
+                        <Sparkles className="w-5 h-5 text-blue-500" /> ✨ Tạo Nhận Xét Cuối Kỳ Bằng Gemini AI
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        AI sẽ tổng hợp toàn bộ {totalLessonsCount} buổi đánh giá và ghi chú cá nhân để viết nhận xét cực kỳ khách quan cho em <strong>{currentStudent?.name}</strong>.
+                      </p>
+                    </div>
 
-              {/* Show loading placeholder skeleton */}
-              {isGenerating && (
-                <div className="space-y-2.5 animate-pulse">
-                  <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4"></div>
-                  <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-5/6"></div>
-                  <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2"></div>
-                </div>
-              )}
+                    <button
+                      type="button"
+                      onClick={handleTriggerAIComment}
+                      disabled={isGenerating || totalLessonsCount === 0}
+                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" /> Đang nhận xét...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" /> Sinh nhận xét AI
+                        </>
+                      )}
+                    </button>
+                  </div>
 
-              {/* Show resulting editor text */}
-              {aiGeneratedText && (
-                <div className="space-y-3 pt-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">Xem trước & Sửa nhận xét từ AI:</label>
-                  <textarea
-                    value={aiGeneratedText}
-                    onChange={(e) => setAiGeneratedText(e.target.value)}
-                    className="w-full h-24 p-3 border border-blue-200 bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/10"
-                  ></textarea>
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => setAiGeneratedText('')}
-                      className="px-3.5 py-1.5 border border-slate-250 text-xs rounded-lg font-semibold hover:bg-slate-50 cursor-pointer"
-                    >
-                      Bỏ qua
-                    </button>
-                    <button
-                      onClick={handleSaveAIComment}
-                      className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5" /> Lưu vào Sổ nhận xét học kỳ
-                    </button>
+                  {/* Show error */}
+                  {errorText && (
+                    <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500" /> {errorText}
+                    </div>
+                  )}
+
+                  {/* Show loading placeholder skeleton */}
+                  {isGenerating && (
+                    <div className="space-y-2.5 animate-pulse">
+                      <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-3/4"></div>
+                      <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-5/6"></div>
+                      <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full w-1/2"></div>
+                    </div>
+                  )}
+
+                  {/* Show resulting editor text */}
+                  {aiGeneratedText && (
+                    <div className="space-y-3 pt-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">Xem trước & Sửa nhận xét từ AI:</label>
+                      <textarea
+                        value={aiGeneratedText}
+                        onChange={(e) => setAiGeneratedText(e.target.value)}
+                        className="w-full h-24 p-3 border border-blue-200 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/10"
+                      ></textarea>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAiGeneratedText('')}
+                          className="px-3.5 py-1.5 border border-slate-250 text-xs rounded-lg font-semibold hover:bg-slate-50 cursor-pointer"
+                        >
+                          Bỏ qua
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveAIComment}
+                          className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Lưu vào Sổ nhận xét học kỳ
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Class selector and actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50 dark:bg-slate-750 p-4 rounded-xl border border-slate-150 dark:border-slate-700">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Chọn lớp tạo nhận xét:</label>
+                      <select
+                        value={bulkClassId}
+                        onChange={(e) => handleBulkClassChange(e.target.value)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer min-w-[150px]"
+                        disabled={isBulkGenerating}
+                      >
+                        {classes.map(c => (
+                          <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleTriggerBulkAIComments}
+                        disabled={isBulkGenerating || bulkSelectedStudentIds.length === 0}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isBulkGenerating ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" /> Đang tạo... {bulkProgress ? `(${bulkProgress.current}/${bulkProgress.total})` : ''}
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" /> Sinh nhận xét AI cho lớp ({bulkSelectedStudentIds.length})
+                          </>
+                        )}
+                      </button>
+
+                      {Object.keys(bulkGeneratedComments).length > 0 && !isBulkGenerating && (
+                        <button
+                          type="button"
+                          onClick={handleSaveAllBulkComments}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Check className="w-4 h-4" /> Lưu tất cả nhận xét
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bulk progress bar */}
+                  {isBulkGenerating && bulkProgress && (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                        <span>Tiến trình tạo nhận xét bằng AI...</span>
+                        <span>{Math.round((bulkProgress.current / bulkProgress.total) * 100)}% ({bulkProgress.current}/{bulkProgress.total})</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-full transition-all duration-300" 
+                          style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Show error/success alerts */}
+                  {bulkErrorText && (
+                    <div className="p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500" /> {bulkErrorText}
+                    </div>
+                  )}
+
+                  {bulkSuccessMsg && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 dark:bg-emerald-950/20 dark:border-emerald-900/30 text-emerald-800 dark:text-emerald-400 text-xs rounded-xl flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-500" /> {bulkSuccessMsg}
+                    </div>
+                  )}
+
+                  {/* Student portfolio grid for selected class */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <span>Danh sách học sinh trong lớp ({students.filter(s => s.classId === bulkClassId).length})</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleSelectAllBulkStudents(students.filter(s => s.classId === bulkClassId).map(s => s.id))}
+                        className="text-blue-500 hover:text-blue-600 font-bold transition-all text-[11px] cursor-pointer"
+                        disabled={isBulkGenerating}
+                      >
+                        {bulkSelectedStudentIds.length === students.filter(s => s.classId === bulkClassId).length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                      </button>
+                    </div>
+
+                    <div className="max-h-[350px] overflow-y-auto space-y-2 pr-1.5 border border-slate-100 dark:border-slate-700/50 rounded-xl p-3 bg-white/50 dark:bg-slate-900/30">
+                      {students.filter(s => s.classId === bulkClassId).length === 0 ? (
+                        <p className="text-center text-xs text-slate-400 py-6">Lớp này hiện chưa có học sinh.</p>
+                      ) : (
+                        students.filter(s => s.classId === bulkClassId).map((student) => {
+                          const isSelected = bulkSelectedStudentIds.includes(student.id);
+                          const isCurrentGenerating = bulkGeneratingId === student.id;
+                          const sAssessments = assessments.filter(a => a.studentId === student.id);
+                          const hasComment = !!bulkGeneratedComments[student.id];
+                          
+                          return (
+                            <div 
+                              key={student.id} 
+                              className={`p-3 rounded-xl border transition-all flex flex-col md:flex-row md:items-center gap-4 justify-between ${
+                                isCurrentGenerating
+                                  ? 'border-blue-500 bg-blue-50/10 dark:bg-blue-900/10 animate-pulse'
+                                  : isSelected
+                                    ? 'border-slate-150 dark:border-slate-700 bg-white dark:bg-slate-800'
+                                    : 'border-slate-100 dark:border-slate-800 opacity-60 bg-slate-50/50 dark:bg-slate-800/10'
+                              }`}
+                            >
+                              {/* Left Column: Selection and Student details */}
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <button
+                                  type="button"
+                                  disabled={isBulkGenerating}
+                                  onClick={() => toggleBulkStudentSelect(student.id)}
+                                  className="text-slate-400 hover:text-blue-500 disabled:opacity-50 transition-all cursor-pointer"
+                                >
+                                  {isSelected ? (
+                                    <CheckSquare className="w-5 h-5 text-blue-500" />
+                                  ) : (
+                                    <Square className="w-5 h-5 text-slate-300 dark:text-slate-600" />
+                                  )}
+                                </button>
+
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="font-bold text-xs text-slate-800 dark:text-slate-100">{student.name}</p>
+                                    <span className="text-[9px] font-mono bg-slate-100 dark:bg-slate-700 px-1 py-0.2 rounded text-slate-450 dark:text-slate-400">
+                                      {student.studentId}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                    Số buổi đánh giá: <span className="font-semibold text-slate-600 dark:text-slate-300">{sAssessments.length}</span>
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right Column: AI generated text input area / status */}
+                              <div className="flex-1 md:max-w-md lg:max-w-xl w-full">
+                                {isCurrentGenerating ? (
+                                  <div className="flex items-center gap-1.5 text-xs text-blue-500 font-bold py-2">
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang tổng hợp học lực và sinh nhận xét bằng AI...
+                                  </div>
+                                ) : hasComment ? (
+                                  <div className="space-y-1">
+                                    <textarea
+                                      value={bulkGeneratedComments[student.id]}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setBulkGeneratedComments(prev => ({
+                                          ...prev,
+                                          [student.id]: val
+                                        }));
+                                      }}
+                                      className="w-full h-14 p-2 text-xs border border-blue-100 dark:border-slate-700 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg outline-none focus:ring-1 focus:ring-blue-500"
+                                      placeholder="Nhận xét của AI..."
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 py-2.5">
+                                    {isSelected ? 'Sẵn sàng tạo nhận xét AI.' : 'Chưa được chọn để nhận xét.'}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -293,7 +583,7 @@ export function StudentPortfolio({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
               {/* Left block: Report card remarks history */}
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-4 vibrant-card">
+              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4 vibrant-card">
                 <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-1.5 font-display">
                   <Award className="w-4.5 h-4.5 text-blue-500" /> Sổ Nhận Xét Học Kỳ
                 </h3>
@@ -305,7 +595,7 @@ export function StudentPortfolio({
                     placeholder="Viết nhận xét thủ công..."
                     value={manualText}
                     onChange={(e) => setManualText(e.target.value)}
-                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none"
                     required
                   />
                   <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer">Lưu</button>
@@ -316,7 +606,7 @@ export function StudentPortfolio({
                 ) : (
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                     {[...studentComments].reverse().map((c) => (
-                      <div key={c.id} className="p-3 bg-slate-50 dark:bg-slate-750/50 rounded-xl border border-slate-100 dark:border-slate-700 space-y-1.5 relative group">
+                      <div key={c.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-700 space-y-1.5 relative group">
                         <div className="flex justify-between items-center text-[10px] text-slate-400">
                           <span className={`px-2 py-0.5 rounded font-bold ${c.type === 'AI' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-700'}`}>
                             {c.type === 'AI' ? '✨ Nhận xét bằng AI' : 'Thủ công'}
@@ -340,7 +630,7 @@ export function StudentPortfolio({
               </div>
 
               {/* Right block: Assessment history timeline log */}
-              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-4">
+              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
                 <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-1.5">
                   <Clock className="w-4.5 h-4.5 text-blue-500" /> Nhật Ký Đánh Giá Buổi Học
                 </h3>
@@ -356,10 +646,10 @@ export function StudentPortfolio({
                         
                         <div className="flex justify-between items-start">
                           <span className="text-[10px] text-slate-400 font-mono">{a.date}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap inline-block ${
                             a.completion === 'Hoàn thành tốt' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400' :
-                            a.completion === 'Hoàn thành' ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/20' :
-                            'bg-amber-50 text-amber-800'
+                            a.completion === 'Hoàn thành' ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400' :
+                            'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400'
                           }`}>
                             {a.completion}
                           </span>
@@ -367,9 +657,9 @@ export function StudentPortfolio({
                         
                         {/* Attributes inline */}
                         <div className="flex flex-wrap gap-1 text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                          <span className="bg-slate-100 dark:bg-slate-750 px-1.5 py-0.5 rounded">😊 Thái độ: {a.attitude}</span>
-                          <span className="bg-slate-100 dark:bg-slate-750 px-1.5 py-0.5 rounded">💻 Kỹ năng: {a.skill}</span>
-                          <span className="bg-slate-100 dark:bg-slate-750 px-1.5 py-0.5 rounded">🤝 Hợp tác: {a.cooperation}</span>
+                          <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">😊 Thái độ: {a.attitude}</span>
+                          <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">💻 Kỹ năng: {a.skill}</span>
+                          <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">🤝 Hợp tác: {a.cooperation}</span>
                         </div>
                       </div>
                     ))}
@@ -380,7 +670,7 @@ export function StudentPortfolio({
             </div>
           </>
         ) : (
-          <div className="text-center py-20 bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 text-slate-400">
+          <div className="text-center py-20 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 text-slate-400">
             Chưa có học sinh nào được lưu hành trong danh sách. Hãy thêm học sinh trước.
           </div>
         )}

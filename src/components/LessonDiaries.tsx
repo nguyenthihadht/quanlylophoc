@@ -226,8 +226,8 @@ export function LessonDiaries({
                       <tr key={a.id} className="hover:bg-slate-50/20">
                         <td className="px-5 py-3 font-mono text-xs font-semibold">{student?.studentId || 'Chưa rõ'}</td>
                         <td className="px-5 py-3 font-semibold text-slate-800 dark:text-slate-100">{student?.name || 'Không có tên'}</td>
-                        <td className="px-5 py-3">
-                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap inline-block ${
                             a.completion === 'Hoàn thành tốt' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400' :
                             a.completion === 'Hoàn thành' ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400' :
                             'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400'

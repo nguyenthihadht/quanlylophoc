@@ -1,6 +1,6 @@
 {
   "name": "Học bạ Tin học",
-  "description": "Hệ thống quản lý, nhật ký dạy học và đánh giá học sinh tiểu học thông minh tích hợp trợ lý AI.",
+  "description": "Hệ thống quản lý, nhật ký dạy học, ghi điểm số học kỳ môn Tin học tiểu học và tự động nhận xét học bạ thông minh tích hợp trợ lý AI.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

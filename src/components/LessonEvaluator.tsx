@@ -39,6 +39,7 @@ export function LessonEvaluator({
   // Step 3: Class Roster with temporary assessments
   const [isClassSelected, setIsClassSelected] = useState(false);
   const [classStudents, setClassStudents] = useState<Student[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [tempAssessments, setTempAssessments] = useState<Record<string, {
     completion: 'Hoàn thành tốt' | 'Hoàn thành' | 'Chưa hoàn thành';
     attitude: 'Tích cực' | 'Bình thường' | 'Chưa tập trung';
@@ -53,6 +54,7 @@ export function LessonEvaluator({
     setSelectedClassId(classId);
     const filtered = students.filter(s => s.classId === classId);
     setClassStudents(filtered);
+    setSelectedStudentIds(filtered.map(s => s.id));
 
     // Initialize temporary assessments for every student
     const initial: typeof tempAssessments = {};
@@ -72,20 +74,22 @@ export function LessonEvaluator({
   const handleSetDefaultsAll = (level: 'excellent' | 'normal') => {
     const updated = { ...tempAssessments };
     classStudents.forEach(s => {
-      if (level === 'excellent') {
-        updated[s.id] = {
-          completion: 'Hoàn thành tốt',
-          attitude: 'Tích cực',
-          skill: 'Thành thạo',
-          cooperation: 'Tốt'
-        };
-      } else {
-        updated[s.id] = {
-          completion: 'Hoàn thành',
-          attitude: 'Bình thường',
-          skill: 'Đạt',
-          cooperation: 'Đạt'
-        };
+      if (selectedStudentIds.includes(s.id)) {
+        if (level === 'excellent') {
+          updated[s.id] = {
+            completion: 'Hoàn thành tốt',
+            attitude: 'Tích cực',
+            skill: 'Thành thạo',
+            cooperation: 'Tốt'
+          };
+        } else {
+          updated[s.id] = {
+            completion: 'Hoàn thành',
+            attitude: 'Bình thường',
+            skill: 'Đạt',
+            cooperation: 'Đạt'
+          };
+        }
       }
     });
     setTempAssessments(updated);
@@ -213,43 +217,43 @@ export function LessonEvaluator({
           </div>
 
           {/* Lesson Diary Entry */}
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">1. Thông tin buổi học</h3>
+          <div className="bg-slate-900 dark:bg-slate-950 p-5 rounded-2xl border border-slate-800 dark:border-slate-850 shadow-md space-y-4 text-white">
+            <h3 className="text-sm font-black uppercase tracking-wider text-blue-400 font-display">1. Thông tin buổi học</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Ngày dạy</label>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Ngày dạy</label>
                 <div className="relative">
                   <Calendar className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
                   <input
                     type="date"
                     value={lessonDate}
                     onChange={(e) => setLessonDate(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-250 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
+                    className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-800/80 text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                     required
                   />
                 </div>
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Tên bài giảng / Chủ đề</label>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Tên bài giảng / Chủ đề</label>
                 <input
                   type="text"
                   placeholder="Ví dụ: Bài 2: Tập gõ hàng phím cơ sở"
                   value={lessonName}
                   onChange={(e) => setLessonName(e.target.value)}
-                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-250 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-800/80 text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Nội dung / Hoạt động giảng dạy chính (tùy chọn)</label>
+              <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Nội dung / Hoạt động giảng dạy chính (tùy chọn)</label>
               <textarea
                 placeholder="Ví dụ: Cho cả lớp thực hành phần mềm TuxTyping luyện ngón hàng phím..."
                 value={lessonContent}
                 onChange={(e) => setLessonContent(e.target.value)}
-                className="w-full h-16 p-3 rounded-xl border border-slate-250 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
+                className="w-full h-16 p-3 rounded-xl border border-slate-700 bg-slate-800/80 text-white text-sm focus:ring-2 focus:ring-blue-500/30 outline-none resize-none"
               ></textarea>
             </div>
           </div>
@@ -262,7 +266,7 @@ export function LessonEvaluator({
                 <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                   <UserCheck className="w-5 h-5 text-emerald-500" /> 2. Đánh giá nhanh kết quả học sinh
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Đặt điểm mặc định trước rồi chỉnh sửa từng cá nhân để tiết kiệm thời gian nhất!</p>
+                <p className="text-xs text-slate-500 mt-0.5">Tích chọn các học sinh cần đánh giá hàng loạt rồi nhấn nút đặt nhanh để tiết kiệm thời gian!</p>
               </div>
 
               {/* Quick Preset Actions */}
@@ -270,16 +274,18 @@ export function LessonEvaluator({
                 <button
                   type="button"
                   onClick={() => handleSetDefaultsAll('normal')}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-lg transition-all cursor-pointer"
+                  disabled={selectedStudentIds.length === 0}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 disabled:opacity-50 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-lg transition-all cursor-pointer"
                 >
-                  Đặt tất cả: Hoàn thành
+                  Đặt đã chọn ({selectedStudentIds.length}): Hoàn thành
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSetDefaultsAll('excellent')}
-                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs rounded-lg transition-all cursor-pointer"
+                  disabled={selectedStudentIds.length === 0}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 disabled:opacity-50 text-emerald-800 dark:text-emerald-300 font-semibold text-xs rounded-lg transition-all cursor-pointer"
                 >
-                  🚀 Đặt tất cả: Hoàn thành tốt
+                  🚀 Đặt đã chọn ({selectedStudentIds.length}): Hoàn thành tốt
                 </button>
               </div>
             </div>
@@ -293,6 +299,20 @@ export function LessonEvaluator({
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-slate-750/50 border-b border-slate-150 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-450 uppercase tracking-wider">
+                      <th className="px-4 py-3 w-12 text-center">
+                        <input
+                          type="checkbox"
+                          checked={classStudents.length > 0 && classStudents.every(s => selectedStudentIds.includes(s.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds(classStudents.map(s => s.id));
+                            } else {
+                              setSelectedStudentIds([]);
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </th>
                       <th className="px-5 py-3">Học sinh</th>
                       <th className="px-5 py-3 text-center min-w-[200px]">Hoàn thành</th>
                       <th className="px-5 py-3 text-center min-w-[200px]">Thái độ</th>
@@ -308,9 +328,25 @@ export function LessonEvaluator({
                         skill: 'Đạt',
                         cooperation: 'Đạt'
                       };
+                      const isSelected = selectedStudentIds.includes(s.id);
 
                       return (
-                        <tr key={s.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-750/20 transition-all">
+                        <tr key={s.id} className={`hover:bg-slate-50/50 dark:hover:bg-slate-750/20 transition-all ${isSelected ? 'bg-blue-50/20 dark:bg-blue-900/10' : ''}`}>
+                          {/* Checkbox */}
+                          <td className="px-4 py-3.5 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedStudentIds(prev =>
+                                  prev.includes(s.id)
+                                    ? prev.filter(id => id !== s.id)
+                                    : [...prev, s.id]
+                                );
+                              }}
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </td>
                           {/* Student Info */}
                           <td className="px-5 py-3.5">
                             <p className="font-semibold text-slate-800 dark:text-slate-100">{s.name}</p>

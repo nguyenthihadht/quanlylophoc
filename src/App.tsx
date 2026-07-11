@@ -6,10 +6,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, School, BookOpen, CheckCircle, PlusCircle, Award, Calendar, 
-  Settings, LogOut, Menu, X, Sun, Moon, Sparkles, LogIn, ChevronRight, Home, RefreshCw 
+  Settings, LogOut, Menu, X, Sun, Moon, Sparkles, LogIn, ChevronRight, Home, RefreshCw,
+  Lock, Unlock, Eye, EyeOff, KeyRound, ShieldCheck, FileSpreadsheet
 } from 'lucide-react';
 import { ClassTrackerAPI } from './lib/api';
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings } from './types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SemesterScore } from './types';
 
 // Import our subcomponents
 import { Dashboard } from './components/Dashboard';
@@ -19,9 +20,10 @@ import { LessonEvaluator } from './components/LessonEvaluator';
 import { LessonDiaries } from './components/LessonDiaries';
 import { StudentPortfolio } from './components/StudentPortfolio';
 import { StatsReports } from './components/StatsReports';
+import { ScoresManager } from './components/ScoresManager';
 import { BackupSettings } from './components/BackupSettings';
 
-type Tab = 'dashboard' | 'school' | 'students' | 'assess' | 'diaries' | 'portfolio' | 'stats' | 'settings';
+type Tab = 'dashboard' | 'school' | 'students' | 'assess' | 'diaries' | 'portfolio' | 'stats' | 'scores' | 'settings';
 
 export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -29,6 +31,12 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Administrator lock screen states
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   // Database cache states
   const [schoolYears, setSchoolYears] = useState<SchoolYear[]>([]);
@@ -38,10 +46,13 @@ export default function App() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [scores, setScores] = useState<SemesterScore[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     schoolName: 'Trường Tiểu học Thuận Giao',
     teacherName: 'Cô Nguyễn Thị Hà',
-    theme: 'light'
+    theme: 'light',
+    adminPassword: '123456', // fallback default is 123456
+    requirePassword: true
   });
 
   // Fetch initial data
@@ -55,6 +66,11 @@ export default function App() {
       const sess = sessionStorage.getItem('is_auth_teacher');
       if (sess === 'true') {
         setIsAuthenticated(true);
+      }
+
+      const adminSess = sessionStorage.getItem('is_admin_unlocked');
+      if (adminSess === 'true') {
+        setIsAdminUnlocked(true);
       }
     }
     loadData();
@@ -76,10 +92,13 @@ export default function App() {
     setLessons(state.lessons || []);
     setAssessments(state.assessments || []);
     setComments(state.comments || []);
+    setScores(ClassTrackerAPI.getScores());
     setSettings(state.settings || {
       schoolName: 'Trường Tiểu học Thuận Giao',
       teacherName: 'Cô Nguyễn Thị Hà',
-      theme: 'light'
+      theme: 'light',
+      adminPassword: '123456',
+      requirePassword: true
     });
   };
 
@@ -95,7 +114,23 @@ export default function App() {
 
   const handleSignOut = () => {
     setIsAuthenticated(false);
+    setIsAdminUnlocked(false);
     sessionStorage.removeItem('is_auth_teacher');
+    sessionStorage.removeItem('is_admin_unlocked');
+    setAdminPasswordInput('');
+    setPasswordError('');
+  };
+
+  const handleVerifyPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    const correctPassword = settings.adminPassword || '123456';
+    if (adminPasswordInput === correctPassword) {
+      setIsAdminUnlocked(true);
+      sessionStorage.setItem('is_admin_unlocked', 'true');
+      setPasswordError('');
+    } else {
+      setPasswordError('Mật khẩu Quản trị viên không đúng. Mật khẩu mặc định là 123456.');
+    }
   };
 
   // CSS Root Class based on light/dark mode settings
@@ -115,6 +150,7 @@ export default function App() {
       case 'diaries': return 'Nhật ký dạy học';
       case 'portfolio': return 'Hồ sơ học tập học sinh';
       case 'stats': return 'Báo cáo & Thống kê';
+      case 'scores': return 'Ghi điểm & Học bạ';
       case 'settings': return 'Thiết lập & Sao lưu';
       default: return 'Sổ Liên Lạc';
     }
@@ -174,6 +210,92 @@ export default function App() {
     );
   }
 
+  if (settings.requirePassword !== false && !isAdminUnlocked) {
+    // PASSWORD LOCK SCREEN FOR ADMINISTRATOR
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${themeClass} bg-slate-50`}>
+        <div className="bg-white dark:bg-slate-800 max-w-md w-full rounded-3xl border border-slate-150 dark:border-slate-700 p-8 shadow-md space-y-6 text-center">
+          <div className="space-y-2">
+            <div className="w-14 h-14 bg-amber-50 dark:bg-amber-950/45 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm border border-amber-100 dark:border-amber-900/40">
+              <Lock className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl md:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight font-display">
+              XÁC THỰC QUẢN TRỊ VIÊN
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Ứng dụng đang khóa. Vui lòng xác thực mật khẩu quản trị viên để mở khóa.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-800/30 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-700/60 text-left space-y-1">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Đã kết nối tài khoản Google:
+            </div>
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 pl-4 truncate">nguyenthihadht@gmail.com</p>
+          </div>
+
+          <form onSubmit={handleVerifyPassword} className="space-y-4 text-left">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5">
+                Mật khẩu Quản trị viên
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={adminPasswordInput}
+                  onChange={(e) => {
+                    setAdminPasswordInput(e.target.value);
+                    setPasswordError('');
+                  }}
+                  placeholder="Nhập mật khẩu"
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-blue-500/20 pr-10 font-mono"
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              
+              {passwordError && (
+                <p className="text-xs font-semibold text-rose-500 mt-1.5 flex items-center gap-1.5">
+                  <span>⚠</span> {passwordError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+            >
+              <KeyRound className="w-4 h-4" /> Xác nhận Mật khẩu (Unlock)
+            </button>
+          </form>
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 text-[11px] text-slate-400 space-y-1">
+            <p>💡 Mật khẩu mặc định là: <span className="font-bold text-slate-600 dark:text-slate-300 font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">123456</span></p>
+            <p>Thầy Cô có thể thay đổi mật khẩu tại menu "Thiết lập hệ thống".</p>
+          </div>
+          
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="text-xs text-slate-400 hover:text-rose-500 hover:underline cursor-pointer transition-all"
+            >
+              Đăng xuất Google
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen flex ${themeClass}`}>
       
@@ -197,56 +319,63 @@ export default function App() {
           <nav className="p-4 space-y-1">
             <button
               onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <Home className="w-4 h-4" /> Bảng điều khiển
             </button>
 
             <button
               onClick={() => { setActiveTab('school'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'school' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'school' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <School className="w-4 h-4" /> Năm học & Khối lớp
             </button>
 
             <button
               onClick={() => { setActiveTab('students'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'students' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'students' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <Users className="w-4 h-4" /> Danh sách học sinh
             </button>
 
             <button
               onClick={() => { setActiveTab('assess'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'assess' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'assess' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <PlusCircle className="w-4 h-4" /> Đánh giá buổi học
             </button>
 
             <button
               onClick={() => { setActiveTab('diaries'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'diaries' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'diaries' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <BookOpen className="w-4 h-4" /> Nhật ký dạy học
             </button>
 
             <button
               onClick={() => { setActiveTab('portfolio'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'portfolio' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'portfolio' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <Award className="w-4 h-4" /> Hồ sơ học tập học sinh
             </button>
 
             <button
+              onClick={() => { setActiveTab('scores'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'scores' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            >
+              <FileSpreadsheet className="w-4 h-4" /> Ghi điểm & Học bạ
+            </button>
+
+            <button
               onClick={() => { setActiveTab('stats'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'stats' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'stats' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <CheckCircle className="w-4 h-4" /> Báo cáo & Thống kê
             </button>
 
             <button
               onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-450 hover:bg-slate-50 dark:hover:bg-slate-750'}`}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <Settings className="w-4 h-4" /> Thiết lập hệ thống
             </button>
@@ -391,6 +520,19 @@ export default function App() {
               students={students}
               assessments={assessments}
               schoolName={settings.schoolName}
+            />
+          )}
+
+          {activeTab === 'scores' && (
+            <ScoresManager
+              students={students}
+              classes={classes}
+              assessments={assessments}
+              comments={comments}
+              scores={scores}
+              onAddOrUpdateScore={(studentId, semester, score) => ClassTrackerAPI.addOrUpdateScore(studentId, semester, score)}
+              onGenerateAIComment={(studentId) => ClassTrackerAPI.generateAIComment(studentId)}
+              onAddComment={(studentId, content, type) => ClassTrackerAPI.addComment(studentId, content, type)}
             />
           )}
 

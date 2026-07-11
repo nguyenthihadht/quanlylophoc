@@ -151,7 +151,7 @@ async function startServer() {
   // Gemini AI Comment Generator Endpoint
   app.post('/api/gemini/comment', async (req, res) => {
     try {
-      const { studentName, gradeName, className, assessments, notes } = req.body;
+      const { studentName, gradeName, className, assessments, scores, notes } = req.body;
 
       if (!studentName) {
         return res.status(400).json({ error: 'Missing studentName parameter' });
@@ -160,11 +160,14 @@ async function startServer() {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         // Return a mock AI comment if key isn't provided to make the app still graceful and functional
+        const scoreStr = scores && scores.length > 0 
+          ? ` (Điểm thi: ${scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ')})`
+          : '';
         const mockComments = [
-          `Em ${studentName} học lớp ${className} có ý thức học tập rất tốt, thao tác máy tính nhanh nhẹn, hoàn thành tốt các bài tập Tin học, cần tiếp tục phát huy trong năm học tới.`,
-          `Em ${studentName} có thái độ học tập tích cực, kỹ năng sử dụng chuột và gõ phím đạt yêu cầu. Rất hợp tác với các bạn trong giờ thực hành.`,
-          `Em ${studentName} nắm vững kiến thức bài học, tích cực tương tác, hoàn thành xuất sắc các sản phẩm Tin học tiểu học.`,
-          `Em ${studentName} có tiến bộ tốt trong các bài thực hành, chăm chú nghe giảng và hoàn thành bài đầy đủ.`
+          `Em ${studentName} học lớp ${className} có ý thức học tập rất tốt, thao tác máy tính nhanh nhẹn, hoàn thành tốt các bài tập Tin học, đạt điểm số thi rất ấn tượng, cần tiếp tục phát huy trong năm học tới.${scoreStr}`,
+          `Em ${studentName} có thái độ học tập tích cực, kỹ năng sử dụng chuột và gõ phím đạt yêu cầu. Rất hợp tác với các bạn trong giờ thực hành.${scoreStr}`,
+          `Em ${studentName} nắm vững kiến thức bài học, tích cực tương tác, hoàn thành xuất sắc các sản phẩm Tin học tiểu học.${scoreStr}`,
+          `Em ${studentName} có tiến bộ tốt trong các bài thực hành, chăm chú nghe giảng và hoàn thành bài đầy đủ.${scoreStr}`
         ];
         const randomComment = mockComments[Math.floor(Math.random() * mockComments.length)];
         return res.json({ comment: randomComment, isMock: true });
@@ -189,13 +192,14 @@ Thông tin học sinh:
 - Khối lớp: ${gradeName}
 - Lớp: ${className}
 - Các ghi chú của giáo viên: ${notes || 'Chưa ghi chú'}
+- Điểm kiểm tra định kỳ (nếu có): ${scores && scores.length > 0 ? scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ') : 'Chưa có điểm'}
 
 Danh sách đánh giá các buổi học gần nhất (Hoàn thành, Thái độ, Kỹ năng, Hợp tác):
 ${JSON.stringify(assessments, null, 2)}
 
 Yêu cầu nhận xét:
 1. Nhận xét bằng tiếng Việt, ấm áp, có tính động viên học sinh Tiểu học nhưng vẫn chỉ rõ ưu khuyết điểm thực tế dựa trên danh sách đánh giá.
-2. Không được máy móc, rập khuôn. Hãy cá nhân hóa nhận xét dựa trên tên và đặc thù của học sinh.
+2. Không được máy móc, rập khuôn. Hãy cá nhân hóa nhận xét dựa trên tên, kết quả đánh giá quá trình học tập và đặc biệt là điểm thi học kỳ nếu có (ví dụ: điểm thi cao thì tuyên dương, điểm chưa tốt thì khích lệ cố gắng thêm).
 3. Độ dài từ 40 đến 80 từ, phù hợp để ghi vào Sổ liên lạc điện tử hoặc Học bạ.
 4. Trả về trực tiếp văn bản nhận xét, không thêm bất kỳ định dạng Markdown hay lời mở đầu/kết thúc nào.`;
 

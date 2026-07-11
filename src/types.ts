@@ -61,10 +61,20 @@ export interface Comment {
   type: 'AI' | 'Thủ công';
 }
 
+export interface SemesterScore {
+  id: string;
+  studentId: string;
+  semester: 'Cuối học kỳ 1' | 'Cuối học kỳ 2';
+  score: number; // e.g. 0 to 10
+  date: string;
+}
+
 export interface AppSettings {
   schoolName: string;
   teacherName: string;
   theme: 'light' | 'dark';
+  adminPassword?: string;
+  requirePassword?: boolean;
 }
 
 export interface SystemBackup {
@@ -75,6 +85,7 @@ export interface SystemBackup {
   lessons: Lesson[];
   assessments: Assessment[];
   comments: Comment[];
+  scores?: SemesterScore[];
   settings: AppSettings;
   backupDate: string;
 }
