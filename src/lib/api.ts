@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore } from '../types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek } from '../types';
 import { loadStateFromFirestore, saveStateToFirestore } from './firebase';
 
 function generateUniqueId(prefix: string): string {
@@ -20,6 +20,7 @@ const DEFAULT_STATE = {
   assessments: [] as Assessment[],
   comments: [] as Comment[],
   scores: [] as SemesterScore[],
+  timeline: [] as TimelineWeek[],
   settings: {
     schoolName: 'Trường Tiểu học Thuận Giao',
     teacherName: 'Cô Nguyễn Thị Hà',
@@ -452,6 +453,135 @@ export class ClassTrackerAPI {
     this.persist();
   }
 
+  // Timeline/Curriculum Distribution Framework
+  public static getTimeline(): TimelineWeek[] {
+    return this.cache.timeline || [];
+  }
+
+  public static saveTimeline(timeline: TimelineWeek[]): void {
+    this.cache.timeline = timeline;
+    this.persist();
+  }
+
+  public static addOrUpdateTimelineWeek(week: Partial<TimelineWeek>): TimelineWeek {
+    const list = this.getTimeline();
+    const existingIndex = list.findIndex(w => w.id === week.id);
+    if (existingIndex !== -1) {
+      list[existingIndex] = {
+        ...list[existingIndex],
+        ...week
+      } as TimelineWeek;
+      this.cache.timeline = [...list];
+      this.persist();
+      return list[existingIndex];
+    } else {
+      const newWeek: TimelineWeek = {
+        id: week.id || generateUniqueId('timeline'),
+        stt: week.stt || (list.length + 1),
+        week: week.week || `Tuần ${list.length + 1}`,
+        startDate: week.startDate || new Date().toISOString().split('T')[0],
+        endDate: week.endDate || new Date().toISOString().split('T')[0],
+        semester: week.semester || 'Học kỳ 1'
+      };
+      this.cache.timeline = [...list, newWeek];
+      this.persist();
+      return newWeek;
+    }
+  }
+
+  public static deleteTimelineWeek(id: string): void {
+    this.cache.timeline = this.getTimeline().filter(w => w.id !== id);
+    this.persist();
+  }
+
+  public static clearTimeline(): void {
+    this.cache.timeline = [];
+    this.persist();
+  }
+
+  public static generateDefaultTimeline(startYearDateStr: string = '2025-09-01'): TimelineWeek[] {
+    const timeline: TimelineWeek[] = [];
+    const startDate = new Date(startYearDateStr);
+    
+    const defaultLessons = [
+      "Bài 1: Thông tin và quyết định",
+      "Bài 2: Khám phá máy tính và các bộ phận",
+      "Bài 3: Làm quen với bàn phím và chuột máy tính",
+      "Bài 4: Các thao tác cơ bản với máy tính",
+      "Bài 5: Tập gõ bàn phím với phần mềm luyện ngón",
+      "Bài 6: Thư mục và tệp tin trong máy tính",
+      "Bài 7: Làm quen với hệ điều hành và giao diện Windows",
+      "Bài 8: Khái niệm về mạng Internet",
+      "Bài 9: Sử dụng trình duyệt Web cơ bản",
+      "Bài 10: Tìm kiếm thông tin hữu ích trên Internet",
+      "Bài 11: Lưu trữ thông tin và tải tệp từ Web an toàn",
+      "Bài 12: An toàn thông tin khi tham gia môi trường số",
+      "Bài 13: Làm quen với phần mềm soạn thảo văn bản Word",
+      "Bài 14: Định dạng văn bản cơ bản (Phông chữ, cỡ chữ, màu sắc)",
+      "Bài 15: Chèn hình ảnh minh họa và căn lề đoạn văn",
+      "Bài 16: Tạo bảng biểu dữ liệu và lập danh sách",
+      "Ôn tập thực hành tổng hợp học kỳ 1",
+      "Đánh giá chất lượng Cuối Học kỳ 1",
+      "Bài 17: Làm quen với ngôn ngữ lập trình trực quan Scratch",
+      "Bài 18: Các câu lệnh di chuyển và vẽ hình học cơ bản",
+      "Bài 19: Thiết lập cấu trúc vòng lặp trong Scratch",
+      "Bài 20: Sử dụng biến số và thực hiện phép tính toán",
+      "Bài 21: Tạo âm thanh sống động và sự kiện tương tác",
+      "Bài 22: Thiết kế trò chơi Hứng quả táo rơi đơn giản",
+      "Bài 23: Làm quen với phần mềm trình chiếu PowerPoint",
+      "Bài 24: Tạo trang chiếu mới và định dạng văn bản",
+      "Bài 25: Thiết kế bố cục và màu nền trang chiếu chuyên nghiệp",
+      "Bài 26: Chèn hình ảnh, sơ đồ và tệp đa phương tiện vào slide",
+      "Bài 27: Thiết lập hiệu ứng chuyển động chuyển trang sinh động",
+      "Bài 28: Thực hành thiết kế bài thuyết trình giới thiệu bản thân",
+      "Bài 29: Giải quyết vấn đề thực tế với sự trợ giúp của máy tính",
+      "Bài 30: Quản lý tệp và thư mục bài tập thực hành nâng cao",
+      "Ôn tập kiến thức thực hành tổng hợp học kỳ 2",
+      "Đánh giá năng lực thực hành Cuối Học kỳ 2",
+      "Tổng kết năm học học tập môn Tin học và trưng bày sản phẩm"
+    ];
+
+    // In Vietnam, standard school year starts around early September and has 35 weeks of active study
+    for (let i = 1; i <= 35; i++) {
+      const weekStart = new Date(startDate.getTime());
+      weekStart.setDate(startDate.getDate() + (i - 1) * 7);
+      
+      const weekEnd = new Date(weekStart.getTime());
+      weekEnd.setDate(weekStart.getDate() + 6);
+      
+      const startStr = weekStart.toISOString().split('T')[0];
+      const endStr = weekEnd.toISOString().split('T')[0];
+      
+      // Weeks 1-18 are Semester 1, 19-35 are Semester 2
+      const semester = i <= 18 ? 'Học kỳ 1' : 'Học kỳ 2';
+      
+      timeline.push({
+        id: `timeline_week_${i}_${Date.now()}`,
+        stt: i,
+        week: `Tuần ${i}`,
+        startDate: startStr,
+        endDate: endStr,
+        semester,
+        lessonName: defaultLessons[i - 1] || `Bài học Tuần ${i}`
+      });
+    }
+    
+    this.cache.timeline = timeline;
+    this.persist();
+    return timeline;
+  }
+
+  public static getTimelineForDate(dateStr: string): TimelineWeek | undefined {
+    const list = this.getTimeline();
+    const dateVal = new Date(dateStr).getTime();
+    
+    return list.find(w => {
+      const sVal = new Date(w.startDate).getTime();
+      const eVal = new Date(w.endDate).getTime();
+      return dateVal >= sVal && dateVal <= eVal;
+    });
+  }
+
   // Backup & Restore
   public static exportBackup(): string {
     const backup: SystemBackup = {
@@ -463,6 +593,7 @@ export class ClassTrackerAPI {
       assessments: this.getAssessments(),
       comments: this.getComments(),
       scores: this.getScores(),
+      timeline: this.getTimeline(),
       settings: this.getSettings(),
       backupDate: new Date().toISOString()
     };
@@ -487,6 +618,7 @@ export class ClassTrackerAPI {
           assessments: backup.assessments || [],
           comments: backup.comments || [],
           scores: backup.scores || [],
+          timeline: backup.timeline || [],
           settings: backup.settings || {
             schoolName: 'Trường Tiểu học Thuận Giao',
             teacherName: 'Cô Nguyễn Thị Hà',
@@ -505,7 +637,7 @@ export class ClassTrackerAPI {
   }
 
   // AI Integration
-  public static async generateAIComment(studentId: string): Promise<string> {
+  public static async generateAIComment(studentId: string, period?: string): Promise<string> {
     const student = this.getStudents().find(s => s.id === studentId);
     if (!student) throw new Error('Student not found');
 
@@ -515,13 +647,36 @@ export class ClassTrackerAPI {
     const studentScores = (this.cache.scores || []).filter(s => s.studentId === studentId);
 
     // Short summary of recent grades
-    const assessmentsSummary = studentAssessments.slice(-5).map(a => ({
+    const assessmentsSummary = studentAssessments.slice(-10).map(a => ({
       date: a.date,
       completion: a.completion,
       attitude: a.attitude,
       skill: a.skill,
       cooperation: a.cooperation
     }));
+
+    // Comprehensive learning process metrics
+    const totalLessonsEvaluated = studentAssessments.length;
+    const completionStats = {
+      excellent: studentAssessments.filter(a => a.completion === 'Hoàn thành tốt').length,
+      completed: studentAssessments.filter(a => a.completion === 'Hoàn thành').length,
+      notCompleted: studentAssessments.filter(a => a.completion === 'Chưa hoàn thành').length
+    };
+    const attitudeStats = {
+      positive: studentAssessments.filter(a => a.attitude === 'Tích cực').length,
+      normal: studentAssessments.filter(a => a.attitude === 'Bình thường').length,
+      needsImprovement: studentAssessments.filter(a => a.attitude === 'Chưa tập trung').length
+    };
+    const skillStats = {
+      proficient: studentAssessments.filter(a => a.skill === 'Thành thạo').length,
+      passed: studentAssessments.filter(a => a.skill === 'Đạt').length,
+      needsImprovement: studentAssessments.filter(a => a.skill === 'Cần hỗ trợ').length
+    };
+    const cooperationStats = {
+      good: studentAssessments.filter(a => a.cooperation === 'Tốt').length,
+      passed: studentAssessments.filter(a => a.cooperation === 'Đạt').length,
+      needsImprovement: studentAssessments.filter(a => a.cooperation === 'Cần cố gắng').length
+    };
 
     try {
       const response = await fetch('/api/gemini/comment', {
@@ -531,9 +686,17 @@ export class ClassTrackerAPI {
           studentName: student.name,
           gradeName: grade?.name || 'Chưa rõ',
           className: clazz?.name || 'Chưa rõ',
+          totalLessonsEvaluated,
+          completionStats,
+          attitudeStats,
+          skillStats,
+          cooperationStats,
           assessments: assessmentsSummary,
           scores: studentScores.map(s => ({ semester: s.semester, score: s.score })),
-          notes: student.note
+          notes: student.note,
+          currentTimelineWeek: this.getTimelineForDate(new Date().toISOString().split('T')[0]) || null,
+          timeline: this.getTimeline(),
+          period: period
         })
       });
 

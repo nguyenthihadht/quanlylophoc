@@ -183,29 +183,29 @@ export function Dashboard({
           </div>
 
           {/* Quick shortcuts */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs vibrant-card">
-            <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 mb-4 font-display">Các lối tắt tiện ích</h3>
+          <div className="bg-slate-900 text-white p-6 rounded-2xl border border-slate-800 shadow-lg">
+            <h3 className="text-lg font-extrabold text-white mb-4 font-display">Các lối tắt tiện ích</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 onClick={() => onNavigate('students')}
-                className="p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-750 dark:hover:bg-slate-700 rounded-xl text-left border border-slate-150 dark:border-slate-750 transition-all cursor-pointer shadow-xs hover:shadow-sm"
+                className="p-4 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-left border border-slate-700 transition-all cursor-pointer shadow-xs hover:shadow-sm"
               >
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 font-display">Nhập học sinh</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Import nhanh danh sách từ tệp Excel / CSV.</p>
+                <h4 className="font-bold text-blue-400 text-sm mb-1 font-display">Nhập học sinh</h4>
+                <p className="text-xs text-slate-300">Import nhanh danh sách từ tệp Excel / CSV.</p>
               </button>
               <button
                 onClick={() => onNavigate('portfolio')}
-                className="p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-750 dark:hover:bg-slate-700 rounded-xl text-left border border-slate-150 dark:border-slate-750 transition-all cursor-pointer shadow-xs hover:shadow-sm"
+                className="p-4 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-left border border-slate-700 transition-all cursor-pointer shadow-xs hover:shadow-sm"
               >
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 font-display">AI nhận xét</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Tự động viết nhận xét học bạ thông minh.</p>
+                <h4 className="font-bold text-emerald-400 text-sm mb-1 font-display">AI nhận xét</h4>
+                <p className="text-xs text-slate-300">Tự động viết nhận xét nhật ký giảng dạy thông minh.</p>
               </button>
               <button
                 onClick={() => onNavigate('stats')}
-                className="p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-750 dark:hover:bg-slate-700 rounded-xl text-left border border-slate-150 dark:border-slate-750 transition-all cursor-pointer shadow-xs hover:shadow-sm"
+                className="p-4 bg-slate-800 hover:bg-slate-750 text-white rounded-xl text-left border border-slate-700 transition-all cursor-pointer shadow-xs hover:shadow-sm"
               >
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 font-display">Xuất Báo Cáo</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Tải học lịch sử, xuất báo cáo học kỳ.</p>
+                <h4 className="font-bold text-amber-400 text-sm mb-1 font-display">Xuất Báo Cáo</h4>
+                <p className="text-xs text-slate-300">Tải học lịch sử, xuất báo cáo học kỳ.</p>
               </button>
             </div>
           </div>

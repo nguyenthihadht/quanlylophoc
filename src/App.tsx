@@ -10,7 +10,7 @@ import {
   Lock, Unlock, Eye, EyeOff, KeyRound, ShieldCheck, FileSpreadsheet
 } from 'lucide-react';
 import { ClassTrackerAPI } from './lib/api';
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SemesterScore } from './types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SemesterScore, TimelineWeek } from './types';
 
 // Import our subcomponents
 import { Dashboard } from './components/Dashboard';
@@ -22,8 +22,9 @@ import { StudentPortfolio } from './components/StudentPortfolio';
 import { StatsReports } from './components/StatsReports';
 import { ScoresManager } from './components/ScoresManager';
 import { BackupSettings } from './components/BackupSettings';
+import TimelineManager from './components/TimelineManager';
 
-type Tab = 'dashboard' | 'school' | 'students' | 'assess' | 'diaries' | 'portfolio' | 'stats' | 'scores' | 'settings';
+type Tab = 'dashboard' | 'school' | 'timeline' | 'students' | 'assess' | 'diaries' | 'portfolio' | 'stats' | 'scores' | 'settings';
 
 export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
@@ -47,6 +48,7 @@ export default function App() {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [scores, setScores] = useState<SemesterScore[]>([]);
+  const [timeline, setTimeline] = useState<TimelineWeek[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     schoolName: 'Trường Tiểu học Thuận Giao',
     teacherName: 'Cô Nguyễn Thị Hà',
@@ -93,6 +95,7 @@ export default function App() {
     setAssessments(state.assessments || []);
     setComments(state.comments || []);
     setScores(ClassTrackerAPI.getScores());
+    setTimeline(ClassTrackerAPI.getTimeline());
     setSettings(state.settings || {
       schoolName: 'Trường Tiểu học Thuận Giao',
       teacherName: 'Cô Nguyễn Thị Hà',
@@ -145,6 +148,7 @@ export default function App() {
     switch(tab) {
       case 'dashboard': return 'Bảng điều khiển';
       case 'school': return 'Năm học & Khối lớp';
+      case 'timeline': return 'Phân phối chương trình';
       case 'students': return 'Danh sách học sinh';
       case 'assess': return 'Đánh giá buổi học';
       case 'diaries': return 'Nhật ký dạy học';
@@ -332,6 +336,13 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => { setActiveTab('timeline'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'timeline' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            >
+              <Calendar className="w-4 h-4" /> Phân phối chương trình
+            </button>
+
+            <button
               onClick={() => { setActiveTab('students'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'students' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
@@ -415,7 +426,7 @@ export default function App() {
             
             {/* Breadcrumbs navigation */}
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> Học bạ</span>
+              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> Nhật ký giảng dạy</span>
               <ChevronRight className="w-3 h-3 text-slate-300" />
               <span className="text-slate-800 dark:text-slate-200">{getTabTitle(activeTab)}</span>
             </div>
@@ -464,6 +475,13 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'timeline' && (
+            <TimelineManager 
+              timeline={timeline}
+              onSaveTimeline={(t) => ClassTrackerAPI.saveTimeline(t)}
+            />
+          )}
+
           {activeTab === 'students' && (
             <StudentManager 
               classes={classes}
@@ -482,6 +500,7 @@ export default function App() {
               students={students}
               lessons={lessons}
               assessments={assessments}
+              timeline={timeline}
               onSaveAssessments={(lId, date, list) => ClassTrackerAPI.saveAssessments(lId, date, list)}
               onAddLesson={(lesson) => ClassTrackerAPI.addLesson(lesson)}
             />
@@ -494,6 +513,7 @@ export default function App() {
               lessons={lessons}
               students={students}
               assessments={assessments}
+              timeline={timeline}
               onDeleteLesson={(id) => ClassTrackerAPI.deleteLesson(id)}
               onUpdateLesson={(id, name, content, date) => ClassTrackerAPI.updateLesson(id, name, content, date)}
             />
@@ -531,7 +551,7 @@ export default function App() {
               comments={comments}
               scores={scores}
               onAddOrUpdateScore={(studentId, semester, score) => ClassTrackerAPI.addOrUpdateScore(studentId, semester, score)}
-              onGenerateAIComment={(studentId) => ClassTrackerAPI.generateAIComment(studentId)}
+              onGenerateAIComment={(studentId, period) => ClassTrackerAPI.generateAIComment(studentId, period)}
               onAddComment={(studentId, content, type) => ClassTrackerAPI.addComment(studentId, content, type)}
             />
           )}

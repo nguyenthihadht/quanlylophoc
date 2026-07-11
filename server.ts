@@ -151,7 +151,22 @@ async function startServer() {
   // Gemini AI Comment Generator Endpoint
   app.post('/api/gemini/comment', async (req, res) => {
     try {
-      const { studentName, gradeName, className, assessments, scores, notes } = req.body;
+      const { 
+        studentName, 
+        gradeName, 
+        className, 
+        totalLessonsEvaluated = 0,
+        completionStats = { excellent: 0, completed: 0, notCompleted: 0 },
+        attitudeStats = { positive: 0, normal: 0, needsImprovement: 0 },
+        skillStats = { proficient: 0, passed: 0, needsImprovement: 0 },
+        cooperationStats = { good: 0, passed: 0, needsImprovement: 0 },
+        assessments, 
+        scores, 
+        notes,
+        currentTimelineWeek = null,
+        timeline = [],
+        period // "Giữa học kỳ I", "Cuối học kỳ I", "Giữa học kỳ II", "Cuối học kỳ II"
+      } = req.body;
 
       if (!studentName) {
         return res.status(400).json({ error: 'Missing studentName parameter' });
@@ -159,18 +174,36 @@ async function startServer() {
 
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        // Return a mock AI comment if key isn't provided to make the app still graceful and functional
+        // Return a mock AI comment tailored to the specific period to make the app still incredibly graceful and functional
         const scoreStr = scores && scores.length > 0 
           ? ` (Điểm thi: ${scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ')})`
           : '';
-        const mockComments = [
-          `Em ${studentName} học lớp ${className} có ý thức học tập rất tốt, thao tác máy tính nhanh nhẹn, hoàn thành tốt các bài tập Tin học, đạt điểm số thi rất ấn tượng, cần tiếp tục phát huy trong năm học tới.${scoreStr}`,
-          `Em ${studentName} có thái độ học tập tích cực, kỹ năng sử dụng chuột và gõ phím đạt yêu cầu. Rất hợp tác với các bạn trong giờ thực hành.${scoreStr}`,
-          `Em ${studentName} nắm vững kiến thức bài học, tích cực tương tác, hoàn thành xuất sắc các sản phẩm Tin học tiểu học.${scoreStr}`,
-          `Em ${studentName} có tiến bộ tốt trong các bài thực hành, chăm chú nghe giảng và hoàn thành bài đầy đủ.${scoreStr}`
-        ];
-        const randomComment = mockComments[Math.floor(Math.random() * mockComments.length)];
-        return res.json({ comment: randomComment, isMock: true });
+        const lessonsStr = totalLessonsEvaluated > 0 
+          ? `Qua ${totalLessonsEvaluated} tiết học thực hành, ` 
+          : '';
+        
+        let processDescription = '';
+        if (completionStats.excellent > completionStats.completed) {
+          processDescription = `thao tác máy tính rất nhanh nhẹn, luôn dẫn đầu lớp và hoàn thành xuất sắc các sản phẩm học tập.`;
+        } else {
+          processDescription = `tiếp thu bài tốt, hoàn thành đầy đủ nội dung bài học và thực hành nghiêm túc.`;
+        }
+
+        let finalComment = '';
+        if (period === 'Giữa học kỳ I') {
+          finalComment = `Em ${studentName} làm quen với phòng máy tính rất tốt, ${processDescription} Giờ học luôn chú ý nghe giảng, có thái độ học tập tích cực, tự tin bước đầu trong môn Tin học.`;
+        } else if (period === 'Cuối học kỳ I') {
+          finalComment = `Học kỳ I vừa qua, em ${studentName} đạt kết quả tốt, ${processDescription} Thao tác sử dụng bàn phím và chuột đúng kỹ thuật, thái độ học tập chuyên cần${scoreStr}.`;
+        } else if (period === 'Giữa học kỳ II') {
+          finalComment = `Em ${studentName} thể hiện tiến bộ rõ rệt trong nửa đầu kỳ II, ${processDescription} Em rất hào hứng khi học các chủ đề mới (như Scratch/PowerPoint) và luôn nỗ lực thực hành sáng tạo.`;
+        } else if (period === 'Cuối học kỳ II') {
+          finalComment = `Tổng kết cả năm học, em ${studentName} hoàn thành tốt chương trình Tin học lớp ${className}, ${processDescription} Kỹ năng thực hành máy tính vững vàng, tư duy logic tốt và luôn chăm chỉ rèn luyện${scoreStr}.`;
+        } else {
+          // General fallback
+          finalComment = `Em ${studentName} học lớp ${className} có ý thức học tập tốt, ${processDescription} Kỹ năng thực hành máy tính đạt chuẩn kiến thức kỹ năng, chăm ngoan và tích cực đóng góp xây dựng bài${scoreStr}.`;
+        }
+
+        return res.json({ comment: finalComment, isMock: true });
       }
 
       // Initialize GoogleGenAI SDK
@@ -183,31 +216,50 @@ async function startServer() {
         }
       });
 
-      // Construct a high-quality prompt for Gemini 3.5 Flash
-      const prompt = `Bạn là một giáo viên Tin học Tiểu học có tâm, am hiểu tâm lý trẻ em và đánh giá khách quan.
-Hãy sinh ra một lời nhận xét học kỳ 2 (hoặc cả năm) ngắn gọn, súc tích (khoảng 2-4 câu) cho học sinh tiểu học sau đây:
+      // Construct a highly detailed and context-aware prompt for Gemini 3.5 Flash
+      const prompt = `Bạn là một giáo viên dạy bộ môn Tin học Tiểu học có tâm, am hiểu tâm lý trẻ em và biết cách nhận xét học bạ chuẩn mực theo Thông tư giáo dục tiểu học Việt Nam.
+Hãy sinh ra một lời nhận xét học kỳ hoặc thời điểm cụ thể, ngắn gọn, súc tích (khoảng 2-4 câu) phù hợp với thời điểm của học sinh tiểu học sau đây:
 
 Thông tin học sinh:
 - Tên học sinh: ${studentName}
 - Khối lớp: ${gradeName}
 - Lớp: ${className}
-- Các ghi chú của giáo viên: ${notes || 'Chưa ghi chú'}
-- Điểm kiểm tra định kỳ (nếu có): ${scores && scores.length > 0 ? scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ') : 'Chưa có điểm'}
+- Các ghi chú đặc biệt từ giáo viên: ${notes || 'Chưa ghi chú'}
+- Điểm thi định kỳ học kỳ (nếu có): ${scores && scores.length > 0 ? scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ') : 'Chưa có điểm'}
 
-Danh sách đánh giá các buổi học gần nhất (Hoàn thành, Thái độ, Kỹ năng, Hợp tác):
+Thời điểm đánh giá được yêu cầu:
+- THỜI ĐIỂM CỤ THỂ: ${period || 'Nhận xét chung'}
+${currentTimelineWeek ? `- Đang ở tuần học thực tế: ${currentTimelineWeek.week} (Từ ngày ${currentTimelineWeek.startDate} đến ngày ${currentTimelineWeek.endDate}) thuộc ${currentTimelineWeek.semester}` : ''}
+
+Thống kê quá trình học tập thực tế (Đồng bộ từ hệ thống quản lý học tập):
+- Tổng số buổi học được đánh giá trước đó: ${totalLessonsEvaluated} buổi học
+- Kết quả hoàn thành bài thực hành: ${completionStats.excellent} buổi đạt loại Xuất sắc/Hoàn thành tốt, ${completionStats.completed} buổi Hoàn thành, ${completionStats.notCompleted} buổi Chưa hoàn thành.
+- Tinh thần thái độ học tập: ${attitudeStats.positive} buổi Tích cực, ${attitudeStats.normal} buổi Bình thường, ${attitudeStats.needsImprovement} buổi Cần cố gắng.
+- Sự phát triển kỹ năng máy tính: ${skillStats.proficient} buổi Thành thạo, ${skillStats.passed} buổi Đạt yêu cầu, ${skillStats.needsImprovement} buổi Chưa đạt.
+- Kỹ năng tương tác, làm việc nhóm: ${cooperationStats.good} buổi Tốt, ${cooperationStats.passed} buổi Đạt, ${cooperationStats.needsImprovement} buổi Cần cố gắng thêm.
+
+Danh sách đánh giá chi tiết của các buổi học gần đây nhất:
 ${JSON.stringify(assessments, null, 2)}
 
 Yêu cầu nhận xét:
-1. Nhận xét bằng tiếng Việt, ấm áp, có tính động viên học sinh Tiểu học nhưng vẫn chỉ rõ ưu khuyết điểm thực tế dựa trên danh sách đánh giá.
-2. Không được máy móc, rập khuôn. Hãy cá nhân hóa nhận xét dựa trên tên, kết quả đánh giá quá trình học tập và đặc biệt là điểm thi học kỳ nếu có (ví dụ: điểm thi cao thì tuyên dương, điểm chưa tốt thì khích lệ cố gắng thêm).
-3. Độ dài từ 40 đến 80 từ, phù hợp để ghi vào Sổ liên lạc điện tử hoặc Học bạ.
-4. Trả về trực tiếp văn bản nhận xét, không thêm bất kỳ định dạng Markdown hay lời mở đầu/kết thúc nào.`;
+1. Nhận xét bằng tiếng Việt, giọng điệu ấm áp, mang tính xây dựng và động viên học sinh Tiểu học nhưng phải cực kỳ chính xác dựa trên DỮ LIỆU THỰC TẾ TRÊN.
+2. PHẢI PHÙ HỢP HOÀN TOÀN VỚI THỜI ĐIỂM ĐÁNH GIÁ ĐƯỢC CHỌN:
+   - Nếu thời điểm đánh giá là "Giữa học kỳ I", hãy nhận xét tập trung khen ngợi nỗ lực làm quen máy tính bước đầu, tư thế ngồi, cách đặt tay lên hàng phím và thái độ nề nếp học tập trong 10 tuần đầu. KHÔNG nhắc tới điểm thi cuối học kỳ.
+   - Nếu thời điểm đánh giá là "Cuối học kỳ I", hãy tổng kết toàn diện kết quả học tập kỳ 1, kỹ năng sử dụng máy tính, thực hành, thái độ và kết hợp nhận xét với điểm số thi học kỳ I (nếu có).
+   - Nếu thời điểm đánh giá là "Giữa học kỳ II", tập trung vào tiến trình học tập của nửa đầu kỳ 2 (như bắt đầu làm quen với lập trình trực quan Scratch hoặc thiết kế trình chiếu PowerPoint, thái độ chủ động thực hành), không nhắc tới điểm thi.
+   - Nếu thời điểm đánh giá là "Cuối học kỳ II" (hoặc cuối năm), tổng kết toàn bộ quá trình, sự tiến bộ vượt bậc sau một năm rèn luyện kỹ năng thực hành Tin học (gõ phím, sử dụng phần mềm, tư duy Scratch/PowerPoint) và nhận xét đối chiếu với điểm thi học kỳ II (nếu có).
+3. PHẢI ĐỐI CHIẾU rõ giữa:
+   - Tổng số buổi học tham gia đánh giá (${totalLessonsEvaluated} buổi) để nhận xét về độ chuyên cần và quá trình rèn luyện.
+   - Điểm số thi học kỳ (nếu có): Khen ngợi nếu điểm cao tương xứng với quá trình rèn luyện chăm chỉ; động viên cố gắng nếu điểm thi chưa đạt kỳ vọng dù quá trình học tốt, hoặc chỉ ra sự tập trung chưa đều nếu điểm thi thấp và quá trình nhiều buổi chưa hoàn thành.
+4. Không được máy móc hay rập khuôn chung chung. Hãy dùng tên riêng "${studentName}" để nhận xét gần gũi.
+5. Độ dài giới hạn nghiêm ngặt từ 40 đến 80 từ, phù hợp để lưu trữ trong học bạ số hoặc hệ thống liên lạc điện tử.
+6. Trả về TRỰC TIẾP văn bản nhận xét kết quả, không viết thêm bất kỳ định dạng Markdown hay lời dẫn/kết, lời thưa gửi nào khác.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.5-flash',
         contents: prompt,
         config: {
-          temperature: 0.8,
+          temperature: 0.7,
         }
       });
 

@@ -5,13 +5,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Calendar, CheckSquare, Sparkles, UserCheck, ChevronRight, Save, ThumbsUp, AlertCircle, ArrowLeft } from 'lucide-react';
-import { Class, Student, Lesson, Assessment } from '../types';
+import { Class, Student, Lesson, Assessment, TimelineWeek } from '../types';
 
 interface LessonEvaluatorProps {
   classes: Class[];
   students: Student[];
   lessons: Lesson[];
   assessments: Assessment[];
+  timeline: TimelineWeek[];
   onSaveAssessments: (
     lessonId: string, 
     date: string, 
@@ -25,6 +26,7 @@ export function LessonEvaluator({
   students,
   lessons,
   assessments,
+  timeline,
   onSaveAssessments,
   onAddLesson
 }: LessonEvaluatorProps) {
@@ -35,6 +37,18 @@ export function LessonEvaluator({
   const [lessonDate, setLessonDate] = useState(new Date().toISOString().split('T')[0]);
   const [lessonName, setLessonName] = useState('');
   const [lessonContent, setLessonContent] = useState('');
+
+  // Auto-fill lesson name based on timeline week
+  useEffect(() => {
+    if (!lessonDate || !timeline || timeline.length === 0) return;
+    const matchedWeek = timeline.find(w => {
+      if (!w.startDate || !w.endDate) return false;
+      return lessonDate >= w.startDate && lessonDate <= w.endDate;
+    });
+    if (matchedWeek && matchedWeek.lessonName) {
+      setLessonName(matchedWeek.lessonName);
+    }
+  }, [lessonDate, timeline]);
   
   // Step 3: Class Roster with temporary assessments
   const [isClassSelected, setIsClassSelected] = useState(false);
@@ -219,7 +233,7 @@ export function LessonEvaluator({
           {/* Lesson Diary Entry */}
           <div className="bg-slate-900 dark:bg-slate-950 p-5 rounded-2xl border border-slate-800 dark:border-slate-850 shadow-md space-y-4 text-white">
             <h3 className="text-sm font-black uppercase tracking-wider text-blue-400 font-display">1. Thông tin buổi học</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Ngày dạy</label>
                 <div className="relative">
@@ -231,6 +245,26 @@ export function LessonEvaluator({
                     className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-800/80 text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                     required
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase mb-1.5">Tuần dạy (Tự động)</label>
+                <div className="w-full px-4 py-2.5 text-sm rounded-xl border border-slate-700 bg-slate-800/50 text-white flex items-center justify-between min-h-[38px] select-none">
+                  {(() => {
+                    const matchedWeek = timeline.find(w => {
+                      if (!w.startDate || !w.endDate) return false;
+                      return lessonDate >= w.startDate && lessonDate <= w.endDate;
+                    });
+                    return matchedWeek ? (
+                      <span className="font-extrabold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs"></span>
+                        {matchedWeek.week} ({matchedWeek.semester})
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 italic">Ngoài khung PPCT</span>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -362,7 +396,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.completion === 'Hoàn thành tốt'
                                     ? 'bg-emerald-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 ✅ Tốt
@@ -373,7 +407,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.completion === 'Hoàn thành'
                                     ? 'bg-blue-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 ✅ Đạt
@@ -384,7 +418,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.completion === 'Chưa hoàn thành'
                                     ? 'bg-amber-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 ⚠️ Chưa đạt
@@ -401,7 +435,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.attitude === 'Tích cực'
                                     ? 'bg-emerald-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 😊 Tích cực
@@ -412,7 +446,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.attitude === 'Bình thường'
                                     ? 'bg-slate-400 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 😐 Thường
@@ -423,7 +457,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.attitude === 'Chưa tập trung'
                                     ? 'bg-rose-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 😟 Chưa tập trung
@@ -440,7 +474,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.skill === 'Thành thạo'
                                     ? 'bg-emerald-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 💻 Tốt
@@ -451,7 +485,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.skill === 'Đạt'
                                     ? 'bg-blue-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 🖱️ Đạt
@@ -462,7 +496,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.skill === 'Cần hỗ trợ'
                                     ? 'bg-rose-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 🆘 Yếu
@@ -479,7 +513,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.cooperation === 'Tốt'
                                     ? 'bg-emerald-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 🤝 Tốt
@@ -490,7 +524,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.cooperation === 'Đạt'
                                     ? 'bg-blue-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 👥 Đạt
@@ -501,7 +535,7 @@ export function LessonEvaluator({
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                   assess.cooperation === 'Cần cố gắng'
                                     ? 'bg-amber-500 text-white shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                               >
                                 ⚠️ Thấp

@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BookOpen, Calendar, Printer, Search, Trash2, Edit2, Eye, UserCheck, ArrowLeft, Layers } from 'lucide-react';
-import { Class, Lesson, Student, Assessment, Grade } from '../types';
+import { Class, Lesson, Student, Assessment, Grade, TimelineWeek } from '../types';
 
 interface LessonDiariesProps {
   classes: Class[];
@@ -13,6 +13,7 @@ interface LessonDiariesProps {
   lessons: Lesson[];
   students: Student[];
   assessments: Assessment[];
+  timeline: TimelineWeek[];
   onDeleteLesson: (id: string) => void;
   onUpdateLesson: (id: string, name: string, content: string, date: string) => void;
 }
@@ -23,9 +24,10 @@ export function LessonDiaries({
   lessons,
   students,
   assessments,
+  timeline,
   onDeleteLesson,
   onUpdateLesson
-}: LessonDiariesProps) {
+ }: LessonDiariesProps) {
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -34,6 +36,17 @@ export function LessonDiaries({
   const [editName, setEditName] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editDate, setEditDate] = useState('');
+
+  // Auto-fill edit name based on timeline week when editing date changes
+  useEffect(() => {
+    if (!editDate || !timeline || timeline.length === 0 || !editingLesson) return;
+    // Only auto-update if the date has actually been changed from the original lesson date
+    if (editDate === editingLesson.date) return;
+    const matchedWeek = timeline.find(w => editDate >= w.startDate && editDate <= w.endDate);
+    if (matchedWeek && matchedWeek.lessonName) {
+      setEditName(matchedWeek.lessonName);
+    }
+  }, [editDate, timeline, editingLesson]);
 
   const handleOpenEdit = (l: Lesson) => {
     setEditingLesson(l);
@@ -110,8 +123,16 @@ export function LessonDiaries({
                         <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
                           Lớp {targetClass?.name} ({targetGrade?.name})
                         </span>
-                        <span className="text-xs text-slate-400 font-mono flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5" /> {lesson.date}
+                        <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5 flex-wrap justify-end">
+                          <Calendar className="w-3.5 h-3.5 text-blue-500" /> {lesson.date}
+                          {(() => {
+                            const matchedWeek = timeline?.find(w => lesson.date >= w.startDate && lesson.date <= w.endDate);
+                            return matchedWeek ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
+                                {matchedWeek.week}
+                              </span>
+                            ) : null;
+                          })()}
                         </span>
                       </div>
                       <h4 className="font-bold text-slate-800 dark:text-slate-100 text-base mt-3 line-clamp-1">
@@ -195,7 +216,17 @@ export function LessonDiaries({
               </span>
             </div>
             <h2 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">{currentLesson?.lessonName}</h2>
-            <p className="text-xs text-slate-400 font-mono">Ngày giảng dạy: {currentLesson?.date}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-2">
+              <span>Ngày giảng dạy: {currentLesson?.date}</span>
+              {currentLesson && (() => {
+                const matchedWeek = timeline?.find(w => currentLesson.date >= w.startDate && currentLesson.date <= w.endDate);
+                return matchedWeek ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/30">
+                    {matchedWeek.week} ({matchedWeek.semester})
+                  </span>
+                ) : null;
+              })()}
+            </p>
             <div className="p-4 bg-slate-50 dark:bg-slate-750/50 rounded-xl border border-slate-100 dark:border-slate-700/60 text-sm text-slate-600 dark:text-slate-300">
               <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">Nội dung bài học:</p>
               {currentLesson?.content || 'Không ghi nhận thêm nội dung hoạt động.'}
@@ -224,20 +255,52 @@ export function LessonDiaries({
                     const student = students.find(s => s.id === a.studentId);
                     return (
                       <tr key={a.id} className="hover:bg-slate-50/20">
-                        <td className="px-5 py-3 font-mono text-xs font-semibold">{student?.studentId || 'Chưa rõ'}</td>
-                        <td className="px-5 py-3 font-semibold text-slate-800 dark:text-slate-100">{student?.name || 'Không có tên'}</td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`px-2 py-0.5 rounded text-xs font-semibold whitespace-nowrap inline-block ${
-                            a.completion === 'Hoàn thành tốt' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400' :
-                            a.completion === 'Hoàn thành' ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/20 dark:text-blue-400' :
-                            'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-400'
+                          <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-1 rounded-md border border-blue-200/30">
+                            {student?.studentId || 'Chưa rõ'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 font-semibold">
+                          <span className="font-extrabold text-slate-900 dark:text-slate-50 text-sm">
+                            {student?.name || 'Không có tên'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                            a.completion === 'Hoàn thành tốt' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/30' :
+                            a.completion === 'Hoàn thành' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/30' :
+                            'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/30'
                           }`}>
                             {a.completion}
                           </span>
                         </td>
-                        <td className="px-5 py-3">{a.attitude}</td>
-                        <td className="px-5 py-3">{a.skill}</td>
-                        <td className="px-5 py-3">{a.cooperation}</td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                            a.attitude === 'Tích cực' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/30' :
+                            a.attitude === 'Bình thường' ? 'bg-slate-100 text-slate-750 dark:bg-slate-700 dark:text-slate-200 border border-slate-200/30' :
+                            'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/30'
+                          }`}>
+                            {a.attitude}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                            a.skill === 'Thành thạo' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200/30' :
+                            a.skill === 'Đạt' ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200/30' :
+                            'bg-pink-100 text-pink-800 dark:bg-pink-950/50 dark:text-pink-300 border border-pink-200/30'
+                          }`}>
+                            {a.skill}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                            a.cooperation === 'Tốt' ? 'bg-teal-100 text-teal-800 dark:bg-teal-950/50 dark:text-teal-300 border border-teal-200/30' :
+                            a.cooperation === 'Đạt' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-300 border border-cyan-200/30' :
+                            'bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200/30'
+                          }`}>
+                            {a.cooperation}
+                          </span>
+                        </td>
                       </tr>
                     );
                   })}
@@ -267,6 +330,19 @@ export function LessonDiaries({
                   className="w-full px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20"
                   required
                 />
+                {(() => {
+                  const matchedWeek = timeline?.find(w => editDate >= w.startDate && editDate <= w.endDate);
+                  return matchedWeek ? (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Tuần dạy tương ứng: <span className="font-bold">{matchedWeek.week} ({matchedWeek.semester})</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 mt-1 italic">
+                      ⚠️ Ngày này nằm ngoài khung PPCT học đã phân phối
+                    </p>
+                  );
+                })()}
               </div>
 
               <div>

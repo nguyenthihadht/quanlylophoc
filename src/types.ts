@@ -69,6 +69,16 @@ export interface SemesterScore {
   date: string;
 }
 
+export interface TimelineWeek {
+  id: string;
+  stt: number;
+  week: string; // e.g. "Tuần 1"
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  semester: 'Học kỳ 1' | 'Học kỳ 2';
+  lessonName?: string; // Tên bài giảng / Chủ đề theo phân phối chương trình
+}
+
 export interface AppSettings {
   schoolName: string;
   teacherName: string;
@@ -86,6 +96,7 @@ export interface SystemBackup {
   assessments: Assessment[];
   comments: Comment[];
   scores?: SemesterScore[];
+  timeline?: TimelineWeek[];
   settings: AppSettings;
   backupDate: string;
 }

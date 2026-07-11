@@ -6,9 +6,44 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, Sparkles, Check, RefreshCw, Info, Save, HelpCircle, 
-  ChevronRight, Calendar, AlertCircle, Edit3, Award, Users, CheckSquare
+  ChevronRight, Calendar, AlertCircle, Edit3, Award, Users, CheckSquare, Download, Upload
 } from 'lucide-react';
 import { Class, Student, Comment, SemesterScore, Assessment } from '../types';
+
+const PERIODS = [
+  {
+    id: 'Giữa học kỳ I' as const,
+    label: 'Giữa học kỳ I',
+    step: 'Lần nhận xét 1',
+    weeks: '10 tuần đầu tiên (Tuần 1 - 10)',
+    type: 'Quá trình (Không thi)',
+    colorClass: 'blue',
+  },
+  {
+    id: 'Cuối học kỳ I' as const,
+    label: 'Cuối học kỳ I',
+    step: 'Lần nhận xét 2',
+    weeks: '8 tuần tiếp theo (Tuần 11 - 18)',
+    type: 'Có bài thi điểm số (0-10)',
+    colorClass: 'amber',
+  },
+  {
+    id: 'Giữa học kỳ II' as const,
+    label: 'Giữa học kỳ II',
+    step: 'Lần nhận xét 3',
+    weeks: '9 tuần tiếp theo (Tuần 19 - 27)',
+    type: 'Quá trình (Không thi)',
+    colorClass: 'indigo',
+  },
+  {
+    id: 'Cuối học kỳ II' as const,
+    label: 'Cuối học kỳ II',
+    step: 'Lần nhận xét 4',
+    weeks: '8 tuần cuối cùng (Tuần 28 - 35)',
+    type: 'Có bài thi điểm số (0-10)',
+    colorClass: 'emerald',
+  },
+];
 
 interface ScoresManagerProps {
   students: Student[];
@@ -17,7 +52,7 @@ interface ScoresManagerProps {
   comments: Comment[];
   scores: SemesterScore[];
   onAddOrUpdateScore: (studentId: string, semester: 'Cuối học kỳ 1' | 'Cuối học kỳ 2', score: number) => void;
-  onGenerateAIComment: (studentId: string) => Promise<string>;
+  onGenerateAIComment: (studentId: string, period?: string) => Promise<string>;
   onAddComment: (studentId: string, content: string, type: 'AI' | 'Thủ công') => void;
 }
 
@@ -38,6 +73,11 @@ export function ScoresManager({
   const [generatingIds, setGeneratingIds] = useState<Record<string, boolean>>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // AI assessment period selection and progress tracking
+  const [selectedPeriod, setSelectedPeriod] = useState<'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II'>('Giữa học kỳ I');
+  const [isBulkGenerating, setIsBulkGenerating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Sync state when selected class or scores change
   useEffect(() => {
@@ -191,7 +231,7 @@ export function ScoresManager({
 
     setGeneratingIds(prev => ({ ...prev, [studentId]: true }));
     try {
-      const comment = await onGenerateAIComment(studentId);
+      const comment = await onGenerateAIComment(studentId, selectedPeriod);
       setEditComments(prev => ({
         ...prev,
         [studentId]: comment
@@ -200,7 +240,7 @@ export function ScoresManager({
       // Save generated comment
       onAddComment(studentId, comment, 'AI');
       
-      setSuccessMessage('Đã tạo nhận xét AI thông minh dựa trên cả điểm số và quá trình học tập!');
+      setSuccessMessage(`Đã tạo nhận xét AI thông minh thành công cho thời điểm ${selectedPeriod}!`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setErrorMessage('Không thể kết nối AI. Đang sử dụng bộ sinh nhận xét dự phòng.');
@@ -208,6 +248,58 @@ export function ScoresManager({
     } finally {
       setGeneratingIds(prev => ({ ...prev, [studentId]: false }));
     }
+  };
+
+  // Bulk generate AI comments for all students of the selected class
+  const handleBulkGenerateAIComments = async () => {
+    const classStudents = students.filter(s => s.classId === selectedClassId);
+    if (classStudents.length === 0) return;
+
+    setIsBulkGenerating(true);
+    setBulkProgress({ current: 0, total: classStudents.length });
+    setSuccessMessage('');
+    setErrorMessage('');
+
+    let generatedCount = 0;
+    const updatedComments = { ...editComments };
+
+    for (let i = 0; i < classStudents.length; i++) {
+      const student = classStudents[i];
+      setBulkProgress({ current: i + 1, total: classStudents.length });
+      setGeneratingIds(prev => ({ ...prev, [student.id]: true }));
+
+      try {
+        // Temporarily save scores to model cache so AI can see it
+        const rowScores = editScores[student.id] || { hk1: '', hk2: '' };
+        if (rowScores.hk1 !== '') {
+          const numHk1 = parseFloat(rowScores.hk1);
+          if (!isNaN(numHk1)) onAddOrUpdateScore(student.id, 'Cuối học kỳ 1', numHk1);
+        }
+        if (rowScores.hk2 !== '') {
+          const numHk2 = parseFloat(rowScores.hk2);
+          if (!isNaN(numHk2)) onAddOrUpdateScore(student.id, 'Cuối học kỳ 2', numHk2);
+        }
+
+        const commentText = await onGenerateAIComment(student.id, selectedPeriod);
+        updatedComments[student.id] = commentText;
+        
+        // Update local edits in real-time
+        setEditComments({ ...updatedComments });
+
+        // Save generated comment in DB
+        onAddComment(student.id, commentText, 'AI');
+        generatedCount++;
+      } catch (err) {
+        console.error(`Lỗi tạo nhận xét AI cho học sinh ${student.name}:`, err);
+      } finally {
+        setGeneratingIds(prev => ({ ...prev, [student.id]: false }));
+      }
+    }
+
+    setIsBulkGenerating(false);
+    setBulkProgress(null);
+    setSuccessMessage(`Đã tạo tự động nhận xét AI thành công cho ${generatedCount}/${classStudents.length} học sinh trong lớp đang chọn tại thời điểm ${selectedPeriod}!`);
+    setTimeout(() => setSuccessMessage(''), 5000);
   };
 
   // EXPORT EXCEL (CSV Format compatible with Excel)
@@ -243,6 +335,141 @@ export function ScoresManager({
     document.body.removeChild(link);
   };
 
+  // DOWNLOAD SAMPLE EXCEL/CSV TEMPLATE
+  const handleDownloadTemplate = () => {
+    const targetClass = classes.find(c => c.id === selectedClassId);
+    if (!targetClass) return;
+
+    const className = targetClass.name;
+    const filename = `Mau_Nhap_Diem_Tin_Hoc_Lop_${className}.csv`;
+
+    // CSV header with BOM
+    const headers = 'Mã số học sinh,Họ và tên,Điểm thi Cuối HK1,Điểm thi Cuối HK2,Nhận xét cuối năm\n';
+    
+    const classStudents = students.filter(s => s.classId === selectedClassId);
+    
+    const rows = classStudents.map((s) => {
+      const rowScores = editScores[s.id] || { hk1: '', hk2: '' };
+      const commentText = editComments[s.id] || '';
+      
+      const cleanComment = commentText.replace(/"/g, '""').replace(/\n/g, ' ');
+
+      return `"${s.studentId}","${s.name}","${rowScores.hk1}","${rowScores.hk2}","${cleanComment}"`;
+    }).join('\n');
+
+    const blob = new Blob(['\ufeff' + headers + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setSuccessMessage('Đã tải xuống file mẫu thành công! Bạn hãy mở bằng Excel hoặc Google Sheets để nhập điểm.');
+    setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  // PARSE AND UPLOAD CSV SCORING FILE
+  const handleUploadCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) {
+          setErrorMessage('File trống hoặc không hợp lệ.');
+          return;
+        }
+
+        // Split text into lines
+        const lines = text.split(/\r?\n/);
+        if (lines.length <= 1) {
+          setErrorMessage('File mẫu không chứa dữ liệu hoặc thiếu tiêu đề.');
+          return;
+        }
+
+        let firstLine = lines[0];
+        if (firstLine.startsWith('\ufeff')) {
+          firstLine = firstLine.substring(1);
+        }
+
+        const headers = firstLine.split(',').map(h => h.trim().replace(/"/g, ''));
+        
+        const mshsIndex = headers.findIndex(h => h.toLowerCase().includes('mã số') || h.toLowerCase().includes('studentid') || h.toLowerCase().includes('mã học sinh'));
+        const hk1Index = headers.findIndex(h => h.toLowerCase().includes('hk1') || h.toLowerCase().includes('học kỳ 1') || h.toLowerCase().includes('học kì 1'));
+        const hk2Index = headers.findIndex(h => h.toLowerCase().includes('hk2') || h.toLowerCase().includes('học kỳ 2') || h.toLowerCase().includes('học kì 2'));
+        const nxIndex = headers.findIndex(h => h.toLowerCase().includes('nhận xét') || h.toLowerCase().includes('comment'));
+
+        if (mshsIndex === -1 || hk1Index === -1 || hk2Index === -1) {
+          setErrorMessage('Cấu trúc file không đúng mẫu. Vui lòng sử dụng file mẫu tải từ hệ thống.');
+          return;
+        }
+
+        let updatedCount = 0;
+        const newEditScores = { ...editScores };
+        const newEditComments = { ...editComments };
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          // Simple CSV line splitter that handles quotes correctly
+          const row: string[] = [];
+          let current = '';
+          let inQuotes = false;
+          
+          for (let charIndex = 0; charIndex < line.length; charIndex++) {
+            const char = line[charIndex];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              row.push(current.trim().replace(/^"|"$/g, ''));
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          row.push(current.trim().replace(/^"|"$/g, ''));
+
+          if (row.length < 3) continue;
+
+          const studentIdInCSV = row[mshsIndex]?.trim();
+          if (!studentIdInCSV) continue;
+
+          const student = students.find(s => s.studentId === studentIdInCSV && s.classId === selectedClassId);
+          if (student) {
+            const hk1Val = row[hk1Index]?.trim();
+            const hk2Val = row[hk2Index]?.trim();
+            const commentVal = nxIndex !== -1 ? row[nxIndex]?.trim() : '';
+
+            newEditScores[student.id] = {
+              hk1: hk1Val && !isNaN(parseFloat(hk1Val)) ? parseFloat(hk1Val).toString() : '',
+              hk2: hk2Val && !isNaN(parseFloat(hk2Val)) ? parseFloat(hk2Val).toString() : ''
+            };
+
+            if (commentVal) {
+              newEditComments[student.id] = commentVal;
+            }
+            updatedCount++;
+          }
+        }
+
+        setEditScores(newEditScores);
+        setEditComments(newEditComments);
+        e.target.value = '';
+
+        setSuccessMessage(`Đã đọc thành công ${updatedCount} học sinh từ file! Hãy nhấn "Lưu điểm lớp" để lưu chính thức.`);
+        setTimeout(() => setSuccessMessage(''), 4500);
+      } catch (err) {
+        setErrorMessage('Đã xảy ra lỗi khi đọc file CSV. Vui lòng đảm bảo định dạng file CSV chuẩn.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Filter students based on search query
   const filteredStudents = students
     .filter(s => s.classId === selectedClassId)
@@ -270,80 +497,121 @@ export function ScoresManager({
 
         {/* Interactive Period Visual Timeline */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
-          {/* Period 1 */}
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 flex flex-col justify-between space-y-3 shadow-xs">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-blue-600 dark:text-blue-450 uppercase tracking-wider">Lần nhận xét 1</span>
-              <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs">Giữa học kỳ I</h4>
-              <p className="text-[11px] text-slate-400">10 tuần đầu tiên (Tuần 1 - 10)</p>
-            </div>
-            <span className="text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-600 px-2.5 py-1 rounded-full self-start">
-              Quá trình (Không thi)
-            </span>
-          </div>
+          {PERIODS.map(p => {
+            const isSelected = selectedPeriod === p.id;
+            let themeStyles = "";
+            let badgeStyles = "";
+            
+            if (p.colorClass === 'blue') {
+              themeStyles = isSelected 
+                ? "border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 shadow-xs ring-2 ring-blue-500/20 scale-[1.01]" 
+                : "border-slate-150 hover:border-blue-300 dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30";
+              badgeStyles = "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400";
+            } else if (p.colorClass === 'amber') {
+              themeStyles = isSelected 
+                ? "border-amber-500 bg-amber-50/40 dark:bg-amber-950/15 shadow-xs ring-2 ring-amber-500/20 scale-[1.01]" 
+                : "border-slate-150 hover:border-amber-300 dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30";
+              badgeStyles = "bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400";
+            } else if (p.colorClass === 'indigo') {
+              themeStyles = isSelected 
+                ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-xs ring-2 ring-indigo-500/20 scale-[1.01]" 
+                : "border-slate-150 hover:border-indigo-300 dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30";
+              badgeStyles = "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400";
+            } else {
+              themeStyles = isSelected 
+                ? "border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/15 shadow-xs ring-2 ring-emerald-500/20 scale-[1.01]" 
+                : "border-slate-150 hover:border-emerald-300 dark:border-slate-700 hover:bg-slate-50/50 dark:hover:bg-slate-700/30";
+              badgeStyles = "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400";
+            }
 
-          {/* Period 2 */}
-          <div className="bg-gradient-to-br from-amber-500/5 to-amber-600/5 dark:from-slate-800 dark:to-slate-800 p-4 rounded-2xl border border-amber-200/50 dark:border-slate-700/80 flex flex-col justify-between space-y-3 shadow-xs relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-12 h-12 bg-amber-500/10 rounded-bl-full flex items-start justify-end p-1">
-              <Award className="w-3.5 h-3.5 text-amber-600" />
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Lần nhận xét 2</span>
-              <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs">Cuối học kỳ I</h4>
-              <p className="text-[11px] text-slate-400">8 tuần tiếp theo (Tuần 11 - 18)</p>
-            </div>
-            <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full self-start flex items-center gap-1 shadow-2xs">
-              ★ Có bài thi điểm số (0-10)
-            </span>
-          </div>
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelectedPeriod(p.id)}
+                className={`text-left bg-white dark:bg-slate-800 p-4 rounded-2xl border flex flex-col justify-between space-y-3 transition-all duration-200 cursor-pointer relative overflow-hidden ${themeStyles}`}
+              >
+                {isSelected && (
+                  <div className="absolute top-0 right-0 bg-blue-600 text-white p-1 rounded-bl-xl shadow-xs flex items-center justify-center">
+                    <Check className="w-3.5 h-3.5" />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                    p.colorClass === 'blue' ? 'text-blue-600' :
+                    p.colorClass === 'amber' ? 'text-amber-600' :
+                    p.colorClass === 'indigo' ? 'text-indigo-600' : 'text-emerald-600'
+                  }`}>{p.step}</span>
+                  <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs flex items-center gap-1.5">
+                    {p.label}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">{p.weeks}</p>
+                </div>
+                <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full self-start ${badgeStyles}`}>
+                  {p.type}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-          {/* Period 3 */}
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 flex flex-col justify-between space-y-3 shadow-xs">
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">Lần nhận xét 3</span>
-              <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs">Giữa học kỳ II</h4>
-              <p className="text-[11px] text-slate-400">9 tuần tiếp theo (Tuần 19 - 27)</p>
-            </div>
-            <span className="text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 px-2.5 py-1 rounded-full self-start">
-              Quá trình (Không thi)
-            </span>
+        {/* AI Comments Generation Assistant Action Panel */}
+        <div className="pt-4 border-t border-dashed border-slate-200 dark:border-slate-700/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h4 className="font-extrabold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" /> Trợ lý Tạo Nhận Xét Tự Động Bằng AI cho Lớp {targetClass?.name || '...'}
+            </h4>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Nhấn chọn một thời kỳ đánh giá ở trên (đang chọn: <strong className="text-indigo-600 dark:text-indigo-400">{selectedPeriod}</strong>), sau đó bấm nút bên phải để AI phân tích và tự động điền nhận xét cá nhân hóa cho học sinh cả lớp.
+            </p>
           </div>
-
-          {/* Period 4 */}
-          <div className="bg-gradient-to-br from-emerald-500/5 to-emerald-600/5 dark:from-slate-800 dark:to-slate-800 p-4 rounded-2xl border border-emerald-200/50 dark:border-slate-700/80 flex flex-col justify-between space-y-3 shadow-xs relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-12 h-12 bg-emerald-500/10 rounded-bl-full flex items-start justify-end p-1">
-              <Award className="w-3.5 h-3.5 text-emerald-600" />
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Lần nhận xét 4</span>
-              <h4 className="font-extrabold text-slate-800 dark:text-slate-100 text-xs">Cuối học kỳ II</h4>
-              <p className="text-[11px] text-slate-400">8 tuần cuối cùng (Tuần 28 - 35)</p>
-            </div>
-            <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 px-2.5 py-1 rounded-full self-start flex items-center gap-1 shadow-2xs">
-              ★ Có bài thi điểm số (0-10)
-            </span>
+          
+          <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+            {isBulkGenerating ? (
+              <div className="w-full md:w-72 space-y-1 bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-indigo-150 shadow-xs">
+                <div className="flex justify-between items-center text-[10px] font-bold text-indigo-600">
+                  <span className="flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang tạo nhận xét...</span>
+                  <span>{bulkProgress ? `${bulkProgress.current}/${bulkProgress.total}` : ''}</span>
+                </div>
+                <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${bulkProgress ? (bulkProgress.current / bulkProgress.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleBulkGenerateAIComments}
+                disabled={!targetClass}
+                className="w-full md:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+              >
+                <Sparkles className="w-4 h-4 text-indigo-200" /> Tự động Tạo Nhận xét AI Cả Lớp ({selectedPeriod})
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* 2. CLASS FILTER & SCORE MANAGEMENT ACTIONS BAR */}
-      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4 vibrant-card">
-        <div className="flex flex-col sm:flex-row gap-4 items-center w-full md:w-auto">
-          {/* Class Select Dropdown */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700/80 shadow-xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 vibrant-card">
+        <div className="flex flex-col sm:flex-row gap-4 items-center w-full xl:w-auto">
+          {/* Class Select Dropdown with Dark Background and Light Text */}
           <div className="space-y-1 w-full sm:w-auto">
             <label className="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Lớp Đang Chọn:</label>
             <select
               value={selectedClassId}
               onChange={handleClassChange}
-              className="px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer min-w-[200px]"
+              className="px-4 py-2.5 text-sm font-extrabold rounded-xl border border-slate-700 bg-slate-900 text-slate-100 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer min-w-[200px] shadow-sm transition-all"
             >
               {classes.map(c => (
-                <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                <option key={c.id} value={c.id} className="bg-slate-900 text-white font-bold">Lớp {c.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Search bar inside class */}
+          {/* Search bar inside class with Dark Background and Light Text */}
           <div className="space-y-1 w-full sm:w-auto flex-1 sm:flex-none">
             <label className="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Tìm kiếm học sinh:</label>
             <input
@@ -351,28 +619,51 @@ export function ScoresManager({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Nhập tên hoặc Mã HS..."
-              className="px-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 max-w-xs"
+              className="px-4 py-2.5 text-sm font-extrabold rounded-xl border border-slate-700 bg-slate-900 text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/40 max-w-xs shadow-sm transition-all"
             />
           </div>
         </div>
 
-        {/* Global actions: Save All & Export Excel */}
-        <div className="flex gap-2.5 w-full md:w-auto justify-end">
+        {/* Global actions: Download Template, Upload CSV, Save All & Export Excel */}
+        <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto justify-end">
+          {/* Download Template Button */}
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-slate-700"
+            title="Tải xuống bảng điểm CSV mẫu chứa danh sách học sinh lớp đang chọn"
+          >
+            <Download className="w-4 h-4 text-sky-400" /> Tải file mẫu
+          </button>
+
+          {/* Upload Scores CSV Button */}
+          <label className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-500">
+            <Upload className="w-4 h-4 text-indigo-200" /> Tải lên bảng điểm
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleUploadCSV}
+              className="hidden"
+            />
+          </label>
+
+          {/* Save All Button */}
           <button
             type="button"
             onClick={handleSaveAllClassData}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
           >
-            <Save className="w-4 h-4" /> Lưu điểm lớp {targetClass?.name}
+            <Save className="w-4 h-4 text-blue-200" /> Lưu điểm lớp {targetClass?.name}
           </button>
           
+          {/* Export Class Excel Button */}
           <button
             type="button"
             onClick={handleExportExcelByClass}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
             title="Xuất File Excel Chứa Mã Số, Họ Tên, Điểm Số và Nhận Xét"
           >
-            <FileSpreadsheet className="w-4 h-4" /> Xuất Excel Lớp
+            <FileSpreadsheet className="w-4 h-4 text-emerald-200" /> Xuất Excel Lớp
           </button>
         </div>
       </div>
@@ -489,9 +780,9 @@ export function ScoresManager({
                           <button
                             type="button"
                             onClick={() => handleGenerateAIForStudent(student.id)}
-                            disabled={isGen || studentAssessments.length === 0}
+                            disabled={isGen}
                             className="px-2.5 py-1.5 bg-indigo-500/10 hover:bg-indigo-500 text-indigo-650 dark:text-indigo-300 dark:hover:text-white disabled:opacity-40 text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
-                            title="Tự động sinh nhận xét học bạ dựa trên điểm thi và quá trình"
+                            title={`Tự động sinh nhận xét AI tại thời điểm: ${selectedPeriod}`}
                           >
                             {isGen ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
