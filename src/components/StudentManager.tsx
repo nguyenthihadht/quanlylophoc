@@ -28,8 +28,20 @@ export function StudentManager({
 }: StudentManagerProps) {
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGradeId, setSelectedGradeId] = useState<string>(() => {
+    const g3 = grades.find(g => g.name.includes('3'));
+    return g3?.id || grades[0]?.id || '';
+  });
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedGender, setSelectedGender] = useState('');
+
+  // Keep selectedGradeId valid if grades change
+  React.useEffect(() => {
+    if (!selectedGradeId && grades.length > 0) {
+      const g3 = grades.find(g => g.name.includes('3'));
+      setSelectedGradeId(g3?.id || grades[0].id);
+    }
+  }, [grades, selectedGradeId]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -171,11 +183,13 @@ export function StudentManager({
 
   // Filter Logic
   const filteredStudents = students.filter(s => {
-    const matchSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        s.studentId.toLowerCase().includes(searchTerm.toLowerCase());
+    const sClass = classes.find(c => c.id === s.classId);
+    const matchGrade = selectedGradeId ? sClass?.gradeId === selectedGradeId : true;
     const matchClass = selectedClassId ? s.classId === selectedClassId : true;
     const matchGender = selectedGender ? s.gender === selectedGender : true;
-    return matchSearch && matchClass && matchGender;
+    const matchSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                        s.studentId.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchGrade && matchClass && matchGender && matchSearch;
   });
 
   // Paginated students
@@ -183,9 +197,128 @@ export function StudentManager({
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedStudents = filteredStudents.slice(startIndex, startIndex + itemsPerPage);
 
+  // Classes for the active grade
+  const activeGradeClasses = selectedGradeId 
+    ? classes.filter(c => c.gradeId === selectedGradeId)
+    : classes;
+
   return (
     <div id="student-manager-container" className="space-y-6">
       
+      {/* 1. NÚT CHỌN KHỐI LỚP (GRADE SELECTOR BAR) */}
+      <div id="students-grade-bar" className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🏫</span> Nút Chọn Khối Lớp:
+            </span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              (Bấm chọn khối để xem danh sách lớp và học sinh tương ứng)
+            </span>
+          </div>
+          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+            Đang hiển thị: <strong className="text-blue-600 dark:text-blue-400 font-bold">{filteredStudents.length}</strong> học sinh
+          </span>
+        </div>
+
+        {/* Grade Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {grades.map(g => {
+            const isSelected = selectedGradeId === g.id;
+            const gradeClasses = classes.filter(c => c.gradeId === g.id);
+            const gradeClassIds = gradeClasses.map(c => c.id);
+            const countStudents = students.filter(s => gradeClassIds.includes(s.classId)).length;
+            const isTech = g.name.includes('5');
+
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => {
+                  setSelectedGradeId(g.id);
+                  if (selectedClassId && !gradeClassIds.includes(selectedClassId)) {
+                    setSelectedClassId('');
+                  }
+                  setCurrentPage(1);
+                }}
+                className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer shadow-xs flex items-center gap-2 border ${
+                  isSelected
+                    ? isTech
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-amber-500/20 ring-2 ring-amber-400 border-amber-500'
+                      : 'bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-400 border-blue-500'
+                    : 'bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                }`}
+              >
+                <span>{isTech ? '🛠️' : '💻'}</span>
+                <span>{g.name}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  isSelected 
+                    ? isTech ? 'bg-black/20 text-slate-950' : 'bg-white/20 text-white' 
+                    : 'bg-slate-200 dark:bg-slate-650 text-slate-600 dark:text-slate-300'
+                }`}>
+                  {gradeClasses.length} lớp • {countStudents} HS
+                </span>
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => { setSelectedGradeId(''); setSelectedClassId(''); setCurrentPage(1); }}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5 border ml-auto ${
+              selectedGradeId === ''
+                ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 border-slate-800'
+                : 'bg-slate-100 dark:bg-slate-750 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+            }`}
+          >
+            <span>🌐</span> Tất cả Khối ({students.length} HS)
+          </button>
+        </div>
+
+        {/* Quick Class Pills for the selected Grade */}
+        {selectedGradeId && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center gap-2 animate-fadeIn">
+            <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mr-1">
+              <span>↳</span> Danh sách lớp {grades.find(g => g.id === selectedGradeId)?.name}:
+            </span>
+            <button
+              type="button"
+              onClick={() => { setSelectedClassId(''); setCurrentPage(1); }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all border flex items-center gap-1.5 ${
+                selectedClassId === ''
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-400/40'
+                  : 'bg-white dark:bg-slate-750 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-250 dark:border-slate-650'
+              }`}
+            >
+              <span>👁️</span> Hiển thị toàn bộ {grades.find(g => g.id === selectedGradeId)?.name} ({students.filter(s => classes.filter(c => c.gradeId === selectedGradeId).map(c => c.id).includes(s.classId)).length} HS)
+            </button>
+            {classes.filter(c => c.gradeId === selectedGradeId).map(c => {
+              const isClsSelected = selectedClassId === c.id;
+              const clsStudentsCount = students.filter(s => s.classId === c.id).length;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { setSelectedClassId(c.id); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 border ${
+                    isClsSelected
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs border-slate-900 dark:border-white'
+                      : 'bg-slate-50 dark:bg-slate-750 text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                  }`}
+                >
+                  <span>Lớp {c.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                    isClsSelected ? 'bg-white/20 text-white dark:bg-black/20 dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-650 text-slate-600 dark:text-slate-300'
+                  }`}>
+                    {clsStudentsCount} HS
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Search and Filters Bar */}
       <div id="students-filter-bar" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
         
@@ -206,16 +339,41 @@ export function StudentManager({
           {/* Class Filter */}
           <select
             value={selectedClassId}
-            onChange={(e) => { setSelectedClassId(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { 
+              const val = e.target.value;
+              setSelectedClassId(val);
+              if (val) {
+                const c = classes.find(item => item.id === val);
+                if (c && c.gradeId && selectedGradeId !== c.gradeId) {
+                  setSelectedGradeId(c.gradeId);
+                }
+              }
+              setCurrentPage(1); 
+            }}
             className="px-3 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
           >
-            <option value="">Tất cả Lớp</option>
-            {classes.map(c => {
-              const gradeName = grades.find(g => g.id === c.gradeId)?.name || '';
-              return (
-                <option key={c.id} value={c.id}>{c.name} ({gradeName})</option>
-              );
-            })}
+            <option value="">
+              {selectedGradeId 
+                ? `Tất cả lớp của ${grades.find(g => g.id === selectedGradeId)?.name}` 
+                : 'Tất cả Lớp học'}
+            </option>
+            {selectedGradeId ? (
+              classes.filter(c => c.gradeId === selectedGradeId).map(c => (
+                <option key={c.id} value={c.id}>Lớp {c.name}</option>
+              ))
+            ) : (
+              grades.map(g => {
+                const gradeClasses = classes.filter(c => c.gradeId === g.id);
+                if (gradeClasses.length === 0) return null;
+                return (
+                  <optgroup key={g.id} label={g.name}>
+                    {gradeClasses.map(c => (
+                      <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                    ))}
+                  </optgroup>
+                );
+              })
+            )}
           </select>
 
           {/* Gender Filter */}
@@ -452,10 +610,15 @@ export function StudentManager({
                   required
                 >
                   <option value="">-- Chọn lớp học --</option>
-                  {classes.map(c => {
-                    const gradeName = grades.find(g => g.id === c.gradeId)?.name || '';
+                  {grades.map(g => {
+                    const gradeClasses = classes.filter(c => c.gradeId === g.id);
+                    if (gradeClasses.length === 0) return null;
                     return (
-                      <option key={c.id} value={c.id}>{c.name} ({gradeName})</option>
+                      <optgroup key={g.id} label={g.name}>
+                        {gradeClasses.map(c => (
+                          <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                        ))}
+                      </optgroup>
                     );
                   })}
                 </select>
@@ -588,9 +751,17 @@ export function StudentManager({
                   required
                 >
                   <option value="">-- Chọn lớp học --</option>
-                  {classes.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
+                  {grades.map(g => {
+                    const gradeClasses = classes.filter(c => c.gradeId === g.id);
+                    if (gradeClasses.length === 0) return null;
+                    return (
+                      <optgroup key={g.id} label={g.name}>
+                        {gradeClasses.map(c => (
+                          <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
                 </select>
               </div>
 

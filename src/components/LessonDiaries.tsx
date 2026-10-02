@@ -141,6 +141,23 @@ export function LessonDiaries({
                       <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2">
                         {lesson.content}
                       </p>
+
+                      {/* Hiển thị tóm tắt sĩ số / điểm danh vắng */}
+                      {lesson.absentStudentIds && lesson.absentStudentIds.length > 0 ? (
+                        <div className="mt-2.5 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50">
+                          <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+                          <span className="font-bold shrink-0">Vắng ({lesson.absentStudentIds.length}):</span>
+                          <span className="truncate">{lesson.absentStudentsSummary || 'Có học sinh vắng'}</span>
+                        </div>
+                      ) : lesson.notes?.includes('Vắng') ? (
+                        <div className="mt-2.5 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 truncate font-semibold">
+                          {lesson.notes}
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Sĩ số lớp: Đầy đủ
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-between items-center mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
@@ -227,9 +244,23 @@ export function LessonDiaries({
                 ) : null;
               })()}
             </p>
-            <div className="p-4 bg-slate-50 dark:bg-slate-750/50 rounded-xl border border-slate-100 dark:border-slate-700/60 text-sm text-slate-600 dark:text-slate-300">
-              <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">Nội dung bài học:</p>
-              {currentLesson?.content || 'Không ghi nhận thêm nội dung hoạt động.'}
+            <div className="p-4 bg-slate-50 dark:bg-slate-750/50 rounded-xl border border-slate-100 dark:border-slate-700/60 text-sm text-slate-600 dark:text-slate-300 space-y-2">
+              <div>
+                <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">Nội dung bài học:</p>
+                {currentLesson?.content || 'Không ghi nhận thêm nội dung hoạt động.'}
+              </div>
+              {currentLesson?.notes && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-xs flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Điểm danh & Ghi chú tiết học:</span>
+                  <span className={`px-2.5 py-0.5 rounded-lg font-bold ${
+                    currentLesson.notes.includes('Vắng') 
+                      ? 'bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-300/40' 
+                      : 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-300/40'
+                  }`}>
+                    {currentLesson.notes}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -244,62 +275,109 @@ export function LessonDiaries({
                   <tr className="bg-slate-50 dark:bg-slate-750/70 border-b border-slate-150 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     <th className="px-5 py-3">Mã học sinh</th>
                     <th className="px-5 py-3">Họ và tên</th>
-                    <th className="px-5 py-3">Hoàn thành</th>
+                    <th className="px-5 py-3">Kiến thức</th>
                     <th className="px-5 py-3">Thái độ</th>
                     <th className="px-5 py-3">Kỹ năng</th>
                     <th className="px-5 py-3">Hợp tác</th>
+                    <th className="px-5 py-3 min-w-[180px]">Ghi chú</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-750 dark:text-slate-350">
                   {lessonAssessments.map((a) => {
                     const student = students.find(s => s.id === a.studentId);
+                    const isAbsent = Boolean(a.isAbsent || currentLesson?.absentStudentIds?.includes(a.studentId) || a.note?.includes('Vắng'));
                     return (
-                      <tr key={a.id} className="hover:bg-slate-50/20">
+                      <tr 
+                        key={a.id} 
+                        className={`transition-colors ${
+                          isAbsent 
+                            ? 'bg-rose-50/50 dark:bg-rose-950/25 border-l-4 border-l-rose-500 hover:bg-rose-50/70' 
+                            : 'hover:bg-slate-50/20'
+                        }`}
+                      >
                         <td className="px-5 py-3 whitespace-nowrap">
                           <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-1 rounded-md border border-blue-200/30">
                             {student?.studentId || 'Chưa rõ'}
                           </span>
                         </td>
                         <td className="px-5 py-3 font-semibold">
-                          <span className="font-extrabold text-slate-900 dark:text-slate-50 text-sm">
-                            {student?.name || 'Không có tên'}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-extrabold text-sm ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-50'}`}>
+                              {student?.name || 'Không có tên'}
+                            </span>
+                            {isAbsent && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                                VẮNG
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
-                            a.completion === 'Hoàn thành tốt' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/30' :
-                            a.completion === 'Hoàn thành' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/30' :
-                            'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/30'
-                          }`}>
-                            {a.completion}
-                          </span>
+                          {isAbsent ? (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/40">
+                              🚫 Vắng mặt
+                            </span>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                              a.completion === 'Hoàn thành tốt' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200/30' :
+                              a.completion === 'Hoàn thành' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200/30' :
+                              'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200/30'
+                            }`}>
+                              {a.completion}
+                            </span>
+                          )}
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
-                            a.attitude === 'Tích cực' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/30' :
-                            a.attitude === 'Bình thường' ? 'bg-slate-100 text-slate-750 dark:bg-slate-700 dark:text-slate-200 border border-slate-200/30' :
-                            'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/30'
-                          }`}>
-                            {a.attitude}
-                          </span>
+                          {isAbsent ? (
+                            <span className="text-slate-400 italic text-xs font-mono">-</span>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                              a.attitude === 'Tích cực' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200/30' :
+                              a.attitude === 'Bình thường' ? 'bg-slate-100 text-slate-750 dark:bg-slate-700 dark:text-slate-200 border border-slate-200/30' :
+                              'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200/30'
+                            }`}>
+                              {a.attitude}
+                            </span>
+                          )}
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
-                            a.skill === 'Thành thạo' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200/30' :
-                            a.skill === 'Đạt' ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200/30' :
-                            'bg-pink-100 text-pink-800 dark:bg-pink-950/50 dark:text-pink-300 border border-pink-200/30'
-                          }`}>
-                            {a.skill}
-                          </span>
+                          {isAbsent ? (
+                            <span className="text-slate-400 italic text-xs font-mono">-</span>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                              a.skill === 'Thành thạo' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300 border border-purple-200/30' :
+                              a.skill === 'Đạt' ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200/30' :
+                              'bg-pink-100 text-pink-800 dark:bg-pink-950/50 dark:text-pink-300 border border-pink-200/30'
+                            }`}>
+                              {a.skill}
+                            </span>
+                          )}
                         </td>
                         <td className="px-5 py-3 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
-                            a.cooperation === 'Tốt' ? 'bg-teal-100 text-teal-800 dark:bg-teal-950/50 dark:text-teal-300 border border-teal-200/30' :
-                            a.cooperation === 'Đạt' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-300 border border-cyan-200/30' :
-                            'bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200/30'
-                          }`}>
-                            {a.cooperation}
-                          </span>
+                          {isAbsent ? (
+                            <span className="text-slate-400 italic text-xs font-mono">-</span>
+                          ) : (
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap inline-block ${
+                              a.cooperation === 'Tốt' ? 'bg-teal-100 text-teal-800 dark:bg-teal-950/50 dark:text-teal-300 border border-teal-200/30' :
+                              a.cooperation === 'Đạt' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-300 border border-cyan-200/30' :
+                              'bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200/30'
+                            }`}>
+                              {a.cooperation}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-xs text-slate-600 dark:text-slate-300">
+                          {a.note ? (
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-medium ${
+                              isAbsent 
+                                ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-300/40 font-semibold' 
+                                : 'text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200/50'
+                            }`}>
+                              📝 {a.note}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">-</span>
+                          )}
                         </td>
                       </tr>
                     );

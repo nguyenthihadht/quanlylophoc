@@ -537,7 +537,7 @@ export function StudentPortfolio({
                                     </span>
                                   </div>
                                   <p className="text-[10px] text-slate-400 mt-0.5">
-                                    Số buổi đánh giá: <span className="font-semibold text-slate-600 dark:text-slate-300">{sAssessments.length}</span>
+                                    Số tiết đã đánh giá: <span className="font-semibold text-slate-600 dark:text-slate-300">{sAssessments.length}</span>
                                   </p>
                                 </div>
                               </div>
@@ -608,9 +608,16 @@ export function StudentPortfolio({
                     {[...studentComments].reverse().map((c) => (
                       <div key={c.id} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-700 space-y-1.5 relative group">
                         <div className="flex justify-between items-center text-[10px] text-slate-400">
-                          <span className={`px-2 py-0.5 rounded font-bold ${c.type === 'AI' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-700'}`}>
-                            {c.type === 'AI' ? '✨ Nhận xét bằng AI' : 'Thủ công'}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded font-bold ${c.type === 'AI' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' : 'bg-slate-100 text-slate-700'}`}>
+                              {c.type === 'AI' ? '✨ Nhận xét bằng AI' : 'Thủ công'}
+                            </span>
+                            {c.period && (
+                              <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                                {c.period}
+                              </span>
+                            )}
+                          </div>
                           <span className="font-mono">{c.date}</span>
                         </div>
                         <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
@@ -632,7 +639,7 @@ export function StudentPortfolio({
               {/* Right block: Assessment history timeline log */}
               <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs space-y-4">
                 <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-1.5">
-                  <Clock className="w-4.5 h-4.5 text-blue-500" /> Nhật Ký Đánh Giá Buổi Học
+                  <Clock className="w-4.5 h-4.5 text-blue-500" /> Nhật Ký Đánh Giá Tiết Học
                 </h3>
 
                 {studentAssessments.length === 0 ? (
@@ -661,6 +668,14 @@ export function StudentPortfolio({
                           <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">💻 Kỹ năng: {a.skill}</span>
                           <span className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">🤝 Hợp tác: {a.cooperation}</span>
                         </div>
+
+                        {/* Ghi chú trường hợp đặc biệt */}
+                        {a.note && (
+                          <div className="mt-1 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-1.5 rounded-lg border border-amber-200/50 flex items-start gap-1">
+                            <span>📝</span>
+                            <span className="font-medium">{a.note}</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

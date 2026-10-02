@@ -199,7 +199,7 @@ Cả lớp nhìn chung có thái độ học tập nghiêm túc, tích cực th�
           <div className="text-center py-16 text-slate-400 flex flex-col items-center justify-center gap-2">
             <Info className="w-8 h-8 text-slate-500" />
             <p className="text-sm font-semibold text-slate-200 print:text-slate-800">Chưa có dữ liệu đánh giá học tập trong hệ thống</p>
-            <p className="text-xs text-slate-400">Vui lòng quay lại mục "Đánh giá buổi học" để tạo tiết học đầu tiên.</p>
+            <p className="text-xs text-slate-400">Vui lòng quay lại mục "Đánh giá Tiết học" để tạo tiết học đầu tiên.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

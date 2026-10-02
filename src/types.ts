@@ -19,6 +19,7 @@ export interface Class {
   name: string; // e.g., "3A1", "3A2", "4A1"
   gradeId: string;
   homeroomTeacher?: string; // Giáo viên chủ nhiệm
+  subject?: string; // Môn học: "Tin học", "Công nghệ"
 }
 
 export interface Student {
@@ -39,6 +40,10 @@ export interface Lesson {
   lessonName: string; // Tên bài học
   content: string; // Nội dung bài học
   createdBy: string;
+  week?: string; // e.g. "Tuần 1", "Tuần 5"
+  notes?: string; // Ghi chú chung cho buổi học
+  absentStudentIds?: string[]; // Danh sách ID học sinh vắng
+  absentStudentsSummary?: string; // Tóm tắt học sinh vắng (ví dụ: "Nguyễn Văn A, Trần Thị B")
 }
 
 export interface Assessment {
@@ -50,6 +55,8 @@ export interface Assessment {
   attitude: 'Tích cực' | 'Bình thường' | 'Chưa tập trung';
   skill: 'Thành thạo' | 'Đạt' | 'Cần hỗ trợ';
   cooperation: 'Tốt' | 'Đạt' | 'Cần cố gắng';
+  note?: string; // Ghi chú trường hợp đặc biệt phát sinh trong giờ dạy
+  isAbsent?: boolean; // Đánh dấu học sinh vắng tiết học
 }
 
 export interface Comment {
@@ -59,6 +66,7 @@ export interface Comment {
   createdBy: string;
   date: string;
   type: 'AI' | 'Thủ công';
+  period?: 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II' | string;
 }
 
 export interface SemesterScore {
@@ -77,6 +85,9 @@ export interface TimelineWeek {
   endDate: string; // YYYY-MM-DD
   semester: 'Học kỳ 1' | 'Học kỳ 2';
   lessonName?: string; // Tên bài giảng / Chủ đề theo phân phối chương trình
+  classId?: string; // ID lớp học áp dụng (hoặc để trống nếu dùng chung)
+  gradeId?: string; // ID khối lớp (Khối 3, 4, 5)
+  subject?: string; // Môn học: "Tin học", "Công nghệ"
 }
 
 export interface AppSettings {

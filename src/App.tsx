@@ -147,10 +147,10 @@ export default function App() {
   const getTabTitle = (tab: Tab) => {
     switch(tab) {
       case 'dashboard': return 'Bảng điều khiển';
-      case 'school': return 'Năm học & Khối lớp';
+      case 'school': return 'Quản lý Lớp học & Khối';
       case 'timeline': return 'Phân phối chương trình';
       case 'students': return 'Danh sách học sinh';
-      case 'assess': return 'Đánh giá buổi học';
+      case 'assess': return 'Đánh giá Tiết học';
       case 'diaries': return 'Nhật ký dạy học';
       case 'portfolio': return 'Hồ sơ học tập học sinh';
       case 'stats': return 'Báo cáo & Thống kê';
@@ -178,15 +178,15 @@ export default function App() {
             <div className="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-3 text-2xl font-bold shadow-md shadow-blue-500/20 font-display">
               T
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-850 dark:text-slate-100 tracking-tight font-display">EduTrack AI</h1>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-850 dark:text-slate-100 tracking-tight font-display">Quản Lý Lớp Học</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">Hệ thống Đánh giá nhanh Roster học sinh Tiểu học thông minh</p>
           </div>
 
           <div className="bg-blue-500/5 text-blue-800 dark:text-blue-300 p-4 rounded-xl text-left text-xs leading-relaxed border border-blue-500/10 space-y-1.5">
             <p className="font-bold flex items-center gap-1"><Sparkles className="w-4 h-4 text-amber-500" /> Hệ thống thiết kế riêng cho:</p>
-            <p>• Giáo viên giảng dạy nhiều lớp (500 - 1000 học sinh).</p>
+            <p>• Giáo viên giảng dạy Tin học (Khối 3, 4) & Công nghệ (Khối 5).</p>
             <p>• Đánh giá nhanh chỉ với 1-click thay thế sổ tay ghi chép.</p>
-            <p>• Tích hợp trợ lý ảo AI Gemini tự động viết nhận xét học bạ cuối kỳ cá nhân hóa.</p>
+            <p>• Tích hợp trợ lý ảo AI Gemini tự động viết nhận xét học bạ các kỳ cá nhân hóa.</p>
           </div>
 
           <button
@@ -207,7 +207,7 @@ export default function App() {
 
           <div className="text-[10px] text-slate-400 space-y-0.5">
             <p>Tài khoản hiện hữu: nguyenthihadht@gmail.com</p>
-            <p>© 2026 Học Bạ Tin Học Tiểu Học · Bảo mật & Mã hóa</p>
+            <p>© 2026 Quản Lý Lớp Học · Bảo mật & Mã hóa</p>
           </div>
         </div>
       </div>
@@ -312,7 +312,7 @@ export default function App() {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-base shadow-sm font-display">
                 T
               </div>
-              <span className="font-extrabold text-base text-blue-600 dark:text-blue-450 tracking-tight font-display">EduTrack AI</span>
+              <span className="font-extrabold text-base text-blue-600 dark:text-blue-450 tracking-tight font-display">Quản Lý Lớp Học</span>
             </div>
             <button className="lg:hidden text-slate-400 hover:text-slate-600 cursor-pointer" onClick={() => setIsSidebarOpen(false)}>
               <X className="w-5 h-5" />
@@ -332,7 +332,7 @@ export default function App() {
               onClick={() => { setActiveTab('school'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'school' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
-              <School className="w-4 h-4" /> Năm học & Khối lớp
+              <School className="w-4 h-4" /> Quản lý Lớp học & Khối
             </button>
 
             <button
@@ -353,7 +353,7 @@ export default function App() {
               onClick={() => { setActiveTab('assess'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'assess' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
-              <PlusCircle className="w-4 h-4" /> Đánh giá buổi học
+              <PlusCircle className="w-4 h-4" /> Đánh giá Tiết học
             </button>
 
             <button
@@ -426,7 +426,7 @@ export default function App() {
             
             {/* Breadcrumbs navigation */}
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> Nhật ký giảng dạy</span>
+              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> Quản Lý Lớp Học</span>
               <ChevronRight className="w-3 h-3 text-slate-300" />
               <span className="text-slate-800 dark:text-slate-200">{getTabTitle(activeTab)}</span>
             </div>
@@ -462,6 +462,7 @@ export default function App() {
               schoolYears={schoolYears}
               grades={grades}
               classes={classes}
+              students={students}
               onAddYear={(name) => ClassTrackerAPI.addSchoolYear(name)}
               onUpdateYear={(id, name) => ClassTrackerAPI.updateSchoolYear(id, name)}
               onDeleteYear={(id) => ClassTrackerAPI.deleteSchoolYear(id)}
@@ -469,8 +470,8 @@ export default function App() {
               onAddGrade={(name) => ClassTrackerAPI.addGrade(name)}
               onUpdateGrade={(id, name) => ClassTrackerAPI.updateGrade(id, name)}
               onDeleteGrade={(id) => ClassTrackerAPI.deleteGrade(id)}
-              onAddClass={(name, gId, teacher) => ClassTrackerAPI.addClass(name, gId, teacher)}
-              onUpdateClass={(id, name, gId, teacher) => ClassTrackerAPI.updateClass(id, name, gId, teacher)}
+              onAddClass={(name, gId, teacher, subject) => ClassTrackerAPI.addClass(name, gId, teacher, subject)}
+              onUpdateClass={(id, name, gId, teacher, subject) => ClassTrackerAPI.updateClass(id, name, gId, teacher, subject)}
               onDeleteClass={(id) => ClassTrackerAPI.deleteClass(id)}
             />
           )}
@@ -478,6 +479,9 @@ export default function App() {
           {activeTab === 'timeline' && (
             <TimelineManager 
               timeline={timeline}
+              classes={classes}
+              grades={grades}
+              students={students}
               onSaveTimeline={(t) => ClassTrackerAPI.saveTimeline(t)}
             />
           )}
@@ -497,6 +501,7 @@ export default function App() {
           {activeTab === 'assess' && (
             <LessonEvaluator 
               classes={classes}
+              grades={grades}
               students={students}
               lessons={lessons}
               assessments={assessments}
@@ -552,7 +557,7 @@ export default function App() {
               scores={scores}
               onAddOrUpdateScore={(studentId, semester, score) => ClassTrackerAPI.addOrUpdateScore(studentId, semester, score)}
               onGenerateAIComment={(studentId, period) => ClassTrackerAPI.generateAIComment(studentId, period)}
-              onAddComment={(studentId, content, type) => ClassTrackerAPI.addComment(studentId, content, type)}
+              onAddComment={(studentId, content, type, period) => ClassTrackerAPI.addComment(studentId, content, type, period)}
             />
           )}
 

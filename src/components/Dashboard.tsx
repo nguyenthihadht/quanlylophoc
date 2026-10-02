@@ -116,7 +116,7 @@ export function Dashboard({
             <BookOpen className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase tracking-wider">Số Buổi Đã Dạy</p>
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase tracking-wider">Số Tiết Đã Đánh Giá</p>
             <h3 className="text-xl md:text-2xl font-extrabold text-slate-800 dark:text-slate-100 mt-0.5 font-display">{totalLessons}</h3>
           </div>
         </div>
@@ -145,7 +145,7 @@ export function Dashboard({
             
             {totalAssessmentsCount === 0 ? (
               <div className="text-center py-8 text-slate-400 dark:text-slate-500 text-sm">
-                Chưa có dữ liệu đánh giá nào. Hãy ghi nhận buổi học đầu tiên!
+                Chưa có dữ liệu đánh giá nào. Hãy ghi nhận tiết học đầu tiên!
               </div>
             ) : (
               <div className="space-y-5">
@@ -216,7 +216,7 @@ export function Dashboard({
           {/* Recent Lesson Logs */}
           <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs vibrant-card">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 font-display">Buổi dạy gần đây</h3>
+              <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 font-display">Tiết dạy gần đây</h3>
               <button 
                 onClick={() => onNavigate('diaries')} 
                 className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-bold flex items-center gap-1 cursor-pointer font-display"
@@ -227,7 +227,7 @@ export function Dashboard({
 
             {recentLessons.length === 0 ? (
               <div className="text-center py-10 text-slate-400 dark:text-slate-500 text-sm">
-                Chưa ghi nhận nhật ký buổi dạy nào.
+                Chưa ghi nhận nhật ký tiết dạy nào.
               </div>
             ) : (
               <div className="space-y-4">

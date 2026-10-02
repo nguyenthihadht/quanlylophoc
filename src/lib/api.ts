@@ -261,14 +261,17 @@ export class ClassTrackerAPI {
   }
 
   public static deleteGrade(id: string): void {
-    this.cache.grades = this.getGrades().filter(g => g.id !== id);
-    // Cascade delete classes
-    const classesToDelete = this.getClasses().filter(c => c.gradeId === id);
-    this.cache.classes = this.getClasses().filter(c => c.gradeId !== id);
+    const classIdsToDelete = new Set(this.getClasses().filter(c => c.gradeId === id).map(c => c.id));
+    const studentIdsToDelete = new Set(this.getStudents().filter(s => classIdsToDelete.has(s.classId)).map(s => s.id));
     
-    // Cascade delete students in those classes
-    const classIds = classesToDelete.map(c => c.id);
-    this.cache.students = this.getStudents().filter(s => !classIds.includes(s.classId));
+    this.cache.grades = this.getGrades().filter(g => g.id !== id);
+    this.cache.classes = this.getClasses().filter(c => c.gradeId !== id);
+    this.cache.students = this.getStudents().filter(s => !classIdsToDelete.has(s.classId));
+    this.cache.lessons = (this.cache.lessons || []).filter(l => !classIdsToDelete.has(l.classId));
+    this.cache.timeline = (this.cache.timeline || []).filter(t => t.gradeId !== id && (!t.classId || !classIdsToDelete.has(t.classId)));
+    this.cache.assessments = (this.cache.assessments || []).filter(a => !studentIdsToDelete.has(a.studentId));
+    this.cache.comments = (this.cache.comments || []).filter(c => !studentIdsToDelete.has(c.studentId));
+    this.cache.scores = (this.cache.scores || []).filter(s => !studentIdsToDelete.has(s.studentId));
     this.persist();
   }
 
@@ -277,27 +280,34 @@ export class ClassTrackerAPI {
     return this.cache.classes || [];
   }
 
-  public static addClass(name: string, gradeId: string, homeroomTeacher?: string): Class {
+  public static addClass(name: string, gradeId: string, homeroomTeacher?: string, subject?: string): Class {
     const newClass: Class = {
       id: generateUniqueId('class'),
       name,
       gradeId,
-      homeroomTeacher
+      homeroomTeacher,
+      subject
     };
     this.cache.classes = [...this.getClasses(), newClass];
     this.persist();
     return newClass;
   }
 
-  public static updateClass(id: string, name: string, gradeId: string, homeroomTeacher?: string): void {
-    this.cache.classes = this.getClasses().map(c => c.id === id ? { ...c, name, gradeId, homeroomTeacher } : c);
+  public static updateClass(id: string, name: string, gradeId: string, homeroomTeacher?: string, subject?: string): void {
+    this.cache.classes = this.getClasses().map(c => c.id === id ? { ...c, name, gradeId, homeroomTeacher, subject } : c);
     this.persist();
   }
 
   public static deleteClass(id: string): void {
+    const studentIdsToDelete = new Set(this.getStudents().filter(s => s.classId === id).map(s => s.id));
     this.cache.classes = this.getClasses().filter(c => c.id !== id);
-    // Cascade delete students
+    // Cascade delete students and associated records
     this.cache.students = this.getStudents().filter(s => s.classId !== id);
+    this.cache.lessons = (this.cache.lessons || []).filter(l => l.classId !== id);
+    this.cache.timeline = (this.cache.timeline || []).filter(t => t.classId !== id);
+    this.cache.assessments = (this.cache.assessments || []).filter(a => !studentIdsToDelete.has(a.studentId));
+    this.cache.comments = (this.cache.comments || []).filter(c => !studentIdsToDelete.has(c.studentId));
+    this.cache.scores = (this.cache.scores || []).filter(s => !studentIdsToDelete.has(s.studentId));
     this.persist();
   }
 
@@ -372,7 +382,9 @@ export class ClassTrackerAPI {
       completion: sa.completion,
       attitude: sa.attitude,
       skill: sa.skill,
-      cooperation: sa.cooperation
+      cooperation: sa.cooperation,
+      note: sa.note || '',
+      isAbsent: sa.isAbsent ?? false
     }));
 
     this.cache.assessments = [...currentAssessments, ...newAssessments];
@@ -384,14 +396,46 @@ export class ClassTrackerAPI {
     return this.cache.comments || [];
   }
 
-  public static addComment(studentId: string, content: string, type: 'AI' | 'Thủ công'): Comment {
+  public static addComment(
+    studentId: string, 
+    content: string, 
+    type: 'AI' | 'Thủ công',
+    period?: 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II' | string
+  ): Comment {
+    if (!this.cache.comments) {
+      this.cache.comments = [];
+    }
+
+    const date = new Date().toISOString().split('T')[0];
+    const createdBy = this.cache.settings?.teacherName || 'Giáo viên';
+
+    // If period is provided, look for existing comment for this period to update
+    if (period) {
+      const existingIndex = this.cache.comments.findIndex(
+        c => c.studentId === studentId && c.period === period
+      );
+
+      if (existingIndex > -1) {
+        this.cache.comments[existingIndex] = {
+          ...this.cache.comments[existingIndex],
+          content,
+          type,
+          createdBy,
+          date
+        };
+        this.persist();
+        return this.cache.comments[existingIndex];
+      }
+    }
+
     const newComment: Comment = {
       id: generateUniqueId('comment'),
       studentId,
       content,
-      createdBy: this.cache.settings?.teacherName || 'Giáo viên',
-      date: new Date().toISOString().split('T')[0],
-      type
+      createdBy,
+      date,
+      type,
+      period
     };
     this.cache.comments = [...this.getComments(), newComment];
     this.persist();
@@ -571,15 +615,39 @@ export class ClassTrackerAPI {
     return timeline;
   }
 
-  public static getTimelineForDate(dateStr: string): TimelineWeek | undefined {
+  public static getTimelineForDate(dateStr: string, classId?: string): TimelineWeek | undefined {
     const list = this.getTimeline();
     const dateVal = new Date(dateStr).getTime();
     
-    return list.find(w => {
+    const matchingWeeks = list.filter(w => {
       const sVal = new Date(w.startDate).getTime();
       const eVal = new Date(w.endDate).getTime();
       return dateVal >= sVal && dateVal <= eVal;
     });
+
+    if (matchingWeeks.length === 0) return undefined;
+    if (!classId) return matchingWeeks[0];
+
+    const targetClass = this.getClasses().find(c => c.id === classId);
+
+    // 1. Exact classId match
+    const exactClassMatch = matchingWeeks.find(w => w.classId === classId);
+    if (exactClassMatch) return exactClassMatch;
+
+    // 2. Grade match
+    if (targetClass) {
+      const gradeMatch = matchingWeeks.find(w => w.gradeId === targetClass.gradeId);
+      if (gradeMatch) return gradeMatch;
+
+      // 3. Subject match
+      if (targetClass.subject) {
+        const subjectMatch = matchingWeeks.find(w => w.subject === targetClass.subject);
+        if (subjectMatch) return subjectMatch;
+      }
+    }
+
+    // 4. Default general week or first matching
+    return matchingWeeks.find(w => !w.classId && !w.gradeId) || matchingWeeks[0];
   }
 
   // Backup & Restore
@@ -678,6 +746,8 @@ export class ClassTrackerAPI {
       needsImprovement: studentAssessments.filter(a => a.cooperation === 'Cần cố gắng').length
     };
 
+    const subjectName = clazz?.subject || (grade?.name?.includes('5') ? 'Công nghệ' : 'Tin học');
+
     try {
       const response = await fetch('/api/gemini/comment', {
         method: 'POST',
@@ -686,6 +756,7 @@ export class ClassTrackerAPI {
           studentName: student.name,
           gradeName: grade?.name || 'Chưa rõ',
           className: clazz?.name || 'Chưa rõ',
+          subject: subjectName,
           totalLessonsEvaluated,
           completionStats,
           attitudeStats,
@@ -717,12 +788,32 @@ export class ClassTrackerAPI {
         ? ` (Điểm thi: ${studentScores.map(s => `${s.semester}: ${s.score}/10`).join(', ')})`
         : '';
 
+      const isTech = subjectName.toLowerCase().includes('công nghệ');
+      const subjectLabel = isTech ? 'Công nghệ' : 'Tin học';
+      const skillPractice = isTech ? 'sản phẩm thực hành công nghệ và lắp ghép mô hình' : 'nội dung thực hành gõ phím và kỹ năng máy tính';
+
+      if (period === 'Giữa học kỳ I') {
+        return `Em ${student.name} có tinh thần học tập tích cực môn ${subjectLabel}, hoàn thành tốt các bài học đầu năm. Nề nếp học tập tốt, hào hứng tương tác trong giờ học.`;
+      } else if (period === 'Cuối học kỳ I') {
+        return `Học kỳ I vừa qua, em ${student.name} tiếp thu bài nhanh, hoàn thành đầy đủ các ${skillPractice}. Chăm ngoan, có ý thức kỷ luật tốt${scoreStr}.`;
+      } else if (period === 'Giữa học kỳ II') {
+        return `Em ${student.name} duy trì thái độ học tập chuyên cần môn ${subjectLabel}, chủ động khám phá bài học mới và tích cực hợp tác cùng bạn bè trong các hoạt động.`;
+      } else if (period === 'Cuối học kỳ II') {
+        if (isGood) {
+          return `Em ${student.name} hoàn thành xuất sắc chương trình môn ${subjectLabel} cả năm học. Kỹ năng thực hành vững vàng, sáng tạo và luôn tự giác rèn luyện${scoreStr}.`;
+        } else if (isOk || completions.length === 0) {
+          return `Em ${student.name} hoàn thành tốt nội dung môn ${subjectLabel} năm học. Kỹ năng đạt chuẩn kiến thức yêu cầu, chăm chỉ và có ý thức rèn luyện tốt${scoreStr}.`;
+        } else {
+          return `Em ${student.name} cần rèn luyện thêm tính tập trung trong các giờ thực hành môn ${subjectLabel}. Em đã hoàn thành chương trình nhưng cần tích cực hơn${scoreStr}.`;
+        }
+      }
+
       if (isGood) {
-        return `Em ${student.name} có nhận thức rất nhanh nhạy về môn Tin học. Trong học kỳ qua, em hoàn thành xuất sắc các nội dung thực hành gõ phím và kỹ năng thực tế, tích cực giúp đỡ bạn bè xung quanh học tập.${scoreStr}`;
+        return `Em ${student.name} có nhận thức rất nhanh nhạy về môn ${subjectLabel}. Em hoàn thành xuất sắc các ${skillPractice}, tích cực giúp đỡ bạn bè xung quanh học tập.${scoreStr}`;
       } else if (isOk || completions.length === 0) {
-        return `Em ${student.name} chăm ngoan, hoàn thành đầy đủ bài thực hành trên lớp. Kỹ năng máy tính đạt yêu cầu chuẩn kiến thức kỹ năng tiểu học, chú ý nghe cô giảng bài.${scoreStr}`;
+        return `Em ${student.name} chăm ngoan, hoàn thành đầy đủ bài thực hành trên lớp. Kỹ năng đạt yêu cầu chuẩn kiến thức môn ${subjectLabel}, chú ý nghe cô giảng bài.${scoreStr}`;
       } else {
-        return `Em ${student.name} cần chú ý tập trung hơn trong giờ học thực hành máy tính. Em vẫn hoàn thành bài nhưng kỹ năng gõ phím còn chậm, cần rèn luyện thêm.${scoreStr}`;
+        return `Em ${student.name} cần chú ý tập trung hơn trong giờ học môn ${subjectLabel}. Em vẫn hoàn thành bài nhưng cần rèn luyện thêm.${scoreStr}`;
       }
     }
   }
