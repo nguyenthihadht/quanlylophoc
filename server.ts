@@ -155,6 +155,7 @@ async function startServer() {
         studentName, 
         gradeName, 
         className, 
+        subject = 'Tin học',
         totalLessonsEvaluated = 0,
         completionStats = { excellent: 0, completed: 0, notCompleted: 0 },
         attitudeStats = { positive: 0, normal: 0, needsImprovement: 0 },
@@ -172,6 +173,9 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing studentName parameter' });
       }
 
+      const isTech = (subject || '').toLowerCase().includes('công nghệ');
+      const subjectNameDisplay = isTech ? 'Công nghệ' : 'Tin học';
+
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         // Return a mock AI comment tailored to the specific period to make the app still incredibly graceful and functional
@@ -184,23 +188,27 @@ async function startServer() {
         
         let processDescription = '';
         if (completionStats.excellent > completionStats.completed) {
-          processDescription = `thao tác máy tính rất nhanh nhẹn, luôn dẫn đầu lớp và hoàn thành xuất sắc các sản phẩm học tập.`;
+          processDescription = isTech 
+            ? `thực hành làm sản phẩm công nghệ rất khéo léo, sáng tạo và luôn hoàn thành xuất sắc nhiệm vụ.`
+            : `thao tác máy tính rất nhanh nhẹn, luôn dẫn đầu lớp và hoàn thành xuất sắc các sản phẩm học tập.`;
         } else {
-          processDescription = `tiếp thu bài tốt, hoàn thành đầy đủ nội dung bài học và thực hành nghiêm túc.`;
+          processDescription = isTech
+            ? `tiếp thu tốt kiến thức công nghệ đời sống, hoàn thành đầy đủ các bài thực hành và an toàn khi sử dụng thiết bị.`
+            : `tiếp thu bài tốt, hoàn thành đầy đủ nội dung bài học và thực hành nghiêm túc.`;
         }
 
         let finalComment = '';
         if (period === 'Giữa học kỳ I') {
-          finalComment = `Em ${studentName} làm quen với phòng máy tính rất tốt, ${processDescription} Giờ học luôn chú ý nghe giảng, có thái độ học tập tích cực, tự tin bước đầu trong môn Tin học.`;
+          finalComment = `Em ${studentName} làm quen với môn ${subjectNameDisplay} rất tốt, ${processDescription} Giờ học luôn chú ý nghe giảng, có thái độ học tập tích cực, tự tin bước đầu.`;
         } else if (period === 'Cuối học kỳ I') {
-          finalComment = `Học kỳ I vừa qua, em ${studentName} đạt kết quả tốt, ${processDescription} Thao tác sử dụng bàn phím và chuột đúng kỹ thuật, thái độ học tập chuyên cần${scoreStr}.`;
+          finalComment = `Học kỳ I vừa qua, em ${studentName} đạt kết quả tốt môn ${subjectNameDisplay}, ${processDescription} Thái độ học tập chuyên cần, có tinh thần tương tác tốt${scoreStr}.`;
         } else if (period === 'Giữa học kỳ II') {
-          finalComment = `Em ${studentName} thể hiện tiến bộ rõ rệt trong nửa đầu kỳ II, ${processDescription} Em rất hào hứng khi học các chủ đề mới (như Scratch/PowerPoint) và luôn nỗ lực thực hành sáng tạo.`;
+          finalComment = `Em ${studentName} thể hiện tiến bộ rõ rệt trong nửa đầu kỳ II môn ${subjectNameDisplay}, ${processDescription} Em rất hào hứng khi tìm hiểu các chủ đề mới và luôn nỗ lực thực hành sáng tạo.`;
         } else if (period === 'Cuối học kỳ II') {
-          finalComment = `Tổng kết cả năm học, em ${studentName} hoàn thành tốt chương trình Tin học lớp ${className}, ${processDescription} Kỹ năng thực hành máy tính vững vàng, tư duy logic tốt và luôn chăm chỉ rèn luyện${scoreStr}.`;
+          finalComment = `Tổng kết cả năm học, em ${studentName} hoàn thành tốt chương trình môn ${subjectNameDisplay} lớp ${className}, ${processDescription} Kỹ năng thực hành vững vàng, tư duy tốt và luôn chăm chỉ rèn luyện${scoreStr}.`;
         } else {
           // General fallback
-          finalComment = `Em ${studentName} học lớp ${className} có ý thức học tập tốt, ${processDescription} Kỹ năng thực hành máy tính đạt chuẩn kiến thức kỹ năng, chăm ngoan và tích cực đóng góp xây dựng bài${scoreStr}.`;
+          finalComment = `Em ${studentName} học lớp ${className} có ý thức học tập tốt môn ${subjectNameDisplay}, ${processDescription} Kỹ năng thực hành đạt chuẩn kiến thức kỹ năng, chăm ngoan và tích cực đóng góp xây dựng bài${scoreStr}.`;
         }
 
         return res.json({ comment: finalComment, isMock: true });
@@ -217,11 +225,12 @@ async function startServer() {
       });
 
       // Construct a highly detailed and context-aware prompt for Gemini 3.5 Flash
-      const prompt = `Bạn là một giáo viên dạy bộ môn Tin học Tiểu học có tâm, am hiểu tâm lý trẻ em và biết cách nhận xét học bạ chuẩn mực theo Thông tư giáo dục tiểu học Việt Nam.
+      const prompt = `Bạn là một giáo viên dạy bộ môn ${subjectNameDisplay} Tiểu học có tâm, am hiểu tâm lý trẻ em và biết cách nhận xét học bạ chuẩn mực theo Thông tư giáo dục tiểu học Việt Nam (Thông tư 27).
 Hãy sinh ra một lời nhận xét học kỳ hoặc thời điểm cụ thể, ngắn gọn, súc tích (khoảng 2-4 câu) phù hợp với thời điểm của học sinh tiểu học sau đây:
 
 Thông tin học sinh:
 - Tên học sinh: ${studentName}
+- Môn học: ${subjectNameDisplay}
 - Khối lớp: ${gradeName}
 - Lớp: ${className}
 - Các ghi chú đặc biệt từ giáo viên: ${notes || 'Chưa ghi chú'}
