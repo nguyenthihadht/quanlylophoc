@@ -31,6 +31,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [assessResetKey, setAssessResetKey] = useState<number>(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Administrator lock screen states
@@ -350,7 +351,11 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setActiveTab('assess'); setIsSidebarOpen(false); }}
+              onClick={() => { 
+                setActiveTab('assess'); 
+                setAssessResetKey(k => k + 1);
+                setIsSidebarOpen(false); 
+              }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'assess' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <PlusCircle className="w-4 h-4" /> Đánh giá Tiết học
@@ -449,10 +454,15 @@ export default function App() {
               students={students}
               lessons={lessons}
               assessments={assessments}
-              onNavigate={(tab) => setActiveTab(tab as Tab)}
+              onNavigate={(tab) => {
+                setActiveTab(tab as Tab);
+                if (tab === 'assess') {
+                  setAssessResetKey(k => k + 1);
+                }
+              }}
               onSelectClassForLesson={(cId) => {
-                // Instantly navigate to quick evaluations for that class
                 setActiveTab('assess');
+                setAssessResetKey(k => k + 1);
               }}
             />
           )}
@@ -500,6 +510,7 @@ export default function App() {
 
           {activeTab === 'assess' && (
             <LessonEvaluator 
+              key={`assess_eval_${assessResetKey}`}
               classes={classes}
               grades={grades}
               students={students}
