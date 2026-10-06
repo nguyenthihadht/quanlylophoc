@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { Class, Student, Lesson, Assessment, TimelineWeek, Grade } from '../types';
 import { TIN_HOC_3_CURRICULUM, TIN_HOC_4_CURRICULUM, CONG_NGHE_5_CURRICULUM } from '../lib/curriculumData';
+import { ClassTrackerAPI } from '../lib/api';
+import { LuckyWheelModal } from './LuckyWheelTab';
 
 interface LessonEvaluatorProps {
   key?: React.Key;
@@ -20,6 +22,7 @@ interface LessonEvaluatorProps {
   lessons: Lesson[];
   assessments: Assessment[];
   timeline: TimelineWeek[];
+  readOnly?: boolean;
   onSaveAssessments: (
     lessonId: string, 
     date: string, 
@@ -35,6 +38,7 @@ export function LessonEvaluator({
   lessons,
   assessments,
   timeline,
+  readOnly = false,
   onSaveAssessments,
   onAddLesson
 }: LessonEvaluatorProps) {
@@ -75,6 +79,47 @@ export function LessonEvaluator({
   }>>({});
 
   const [notification, setNotification] = useState('');
+  const [showWheelInLesson, setShowWheelInLesson] = useState(false);
+  const [wheelHighlightedStudentId, setWheelHighlightedStudentId] = useState<string | null>(null);
+
+  // Xử lý khi học sinh được gọi và chấm điểm từ Vòng Xoay Kỳ Diệu trong tiết học
+  const handleWheelResultInLesson = (student: Student, stars: 1 | 2 | 3, note: string) => {
+    const starsMap: Record<1 | 2 | 3, string> = {
+      1: 'Ko trả lời được',
+      2: 'Trả lời đúng 1 phần',
+      3: 'Trả lời bài tốt'
+    };
+    const noteFormatted = note && note.trim()
+      ? `[Vòng quay ⭐x${stars} - ${starsMap[stars]}]: ${note.trim()}`
+      : `[Vòng quay ⭐x${stars}]: ${starsMap[stars]}`;
+
+    // Cập nhật ngay kết quả vào phiếu đánh giá của em
+    handleUpdateField(student.id, 'completion', stars === 3 ? 'Hoàn thành tốt' : stars === 2 ? 'Hoàn thành' : 'Chưa hoàn thành');
+    handleUpdateField(student.id, 'attitude', stars >= 2 ? 'Tích cực' : 'Bình thường');
+    handleUpdateField(student.id, 'skill', stars === 3 ? 'Thành thạo' : 'Đạt');
+    handleUpdateField(student.id, 'note', noteFormatted);
+
+    // Lưu vào lịch sử Vòng quay của hệ thống (chỉ khi không ở chế độ chỉ xem)
+    if (!readOnly) {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      ClassTrackerAPI.addWheelRecord({
+        studentId: student.id,
+        studentName: student.name,
+        classId: selectedClassId || '',
+        className: classes.find(c => c.id === selectedClassId)?.name || '',
+        timestamp: timeStr,
+        date: now.toISOString().split('T')[0],
+        stars,
+        ratingText: starsMap[stars],
+        note: note.trim()
+      });
+    }
+
+    setWheelHighlightedStudentId(student.id);
+    setShowWheelInLesson(false);
+    setTimeout(() => setWheelHighlightedStudentId(null), 8000);
+  };
 
   // Hàm tự động tìm tên bài giảng chính xác theo phân phối chương trình của lớp và tuần học
   const resolveLessonName = (weekNum: number, clsId: string): string => {
@@ -272,6 +317,11 @@ export function LessonEvaluator({
   // Lưu bài giảng và toàn bộ đánh giá học sinh
   const handleSaveAll = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      setNotification('🔒 Bạn đang ở Chế độ Xem tham khảo dành cho Đồng nghiệp — Chức năng lưu tiết học không khả dụng để bảo toàn dữ liệu.');
+      setTimeout(() => setNotification(''), 4000);
+      return;
+    }
     if (!selectedClassId || !lessonName.trim() || classStudents.length === 0) return;
 
     const todayDate = new Date().toISOString().split('T')[0];
@@ -333,6 +383,19 @@ export function LessonEvaluator({
 
   return (
     <div id="lesson-eval-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể trải nghiệm toàn bộ quy trình chọn Khối, chọn Lớp, xem bảng tiêu chí và điểm danh. Nút lưu dữ liệu tiết học chính thức đã được khóa.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
       
       {/* Toast Notification */}
       {notification && (
@@ -544,37 +607,37 @@ export function LessonEvaluator({
                 const isTech = currentGrade?.name.includes('5') || c.subject === 'Công nghệ';
 
                 return (
-                  <button
+                    <button
                     key={c.id}
                     type="button"
                     onClick={() => handleSelectClass(c.id)}
-                    className="p-5 bg-white dark:bg-slate-800 hover:bg-blue-50/50 dark:hover:bg-slate-750/80 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-blue-500 dark:hover:border-cyan-400 hover:shadow-lg text-left transition-all group flex flex-col justify-between h-44 cursor-pointer"
+                    className="p-5 bg-[#0f2444] hover:bg-[#163a66] text-white rounded-2xl border-2 border-blue-800/90 hover:border-sky-400 hover:shadow-xl text-left transition-all group flex flex-col justify-between h-44 cursor-pointer"
                   >
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
                           isTech 
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' 
-                            : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                            : 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
                         }`}>
                           {isTech ? '🛠️ Công nghệ' : '💻 Tin học'}
                         </span>
-                        <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center text-slate-400 transition-all">
+                        <div className="w-7 h-7 rounded-full bg-blue-900/60 group-hover:bg-blue-600 text-sky-300 group-hover:text-white flex items-center justify-center transition-all border border-blue-700/60">
                           <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                         </div>
                       </div>
 
-                      <h3 className="font-black text-slate-800 dark:text-slate-100 text-2xl group-hover:text-blue-600 dark:group-hover:text-cyan-300 transition-colors font-display">
+                      <h3 className="font-black text-white text-2xl group-hover:text-amber-300 transition-colors font-display">
                         Lớp {c.name}
                       </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        Sĩ số: <strong className="text-slate-800 dark:text-slate-200 font-extrabold">{totalClassStudents}</strong> học sinh
+                      <p className="text-xs text-sky-200/90 mt-1">
+                        Sĩ số: <strong className="text-white font-extrabold">{totalClassStudents}</strong> học sinh
                       </p>
                     </div>
 
-                    <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                      <span className="truncate">GVCN: <span className="font-bold text-slate-700 dark:text-slate-300">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
-                      <span className="text-[11px] font-bold text-blue-600 dark:text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="pt-2.5 border-t border-blue-800/70 text-xs text-sky-200/80 flex items-center justify-between">
+                      <span className="truncate">GVCN: <span className="font-bold text-white">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
+                      <span className="text-[11px] font-black text-sky-300 group-hover:text-amber-300 transition-colors flex items-center gap-0.5">
                         Đánh giá →
                       </span>
                     </div>
@@ -590,31 +653,35 @@ export function LessonEvaluator({
         ========================================================================= */
         <form onSubmit={handleSaveAll} className="space-y-6 animate-fadeIn">
           
-          {/* Header Action Row */}
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
+          {/* Header Action Row (Nền xanh đậm chữ trắng cho dễ quan sát) */}
+          <div className="bg-gradient-to-r from-[#0b1e36] via-[#0f2444] to-[#15345a] text-white p-4.5 rounded-2xl border-2 border-sky-400 shadow-md flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <button
                 type="button"
                 onClick={handleBackToClasses}
-                className="px-3.5 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                className="px-3.5 py-2 text-xs font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border border-sky-300"
               >
-                <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <span>← Quay lại chọn lớp ({currentGrade?.name})</span>
+                <ArrowLeft className="w-4 h-4 text-white" />
+                <span>← Chọn lại lớp ({currentGrade?.name})</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleBackToGrades}
-                className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 underline cursor-pointer"
+                className="px-3 py-2 text-xs font-bold text-sky-200 hover:text-white underline cursor-pointer"
               >
                 Chọn lại khối khác
               </button>
             </div>
 
-            <h2 className="text-base md:text-lg font-black text-slate-850 dark:text-slate-100 font-display flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Đánh giá: Lớp {currentClass?.name} ({currentGrade?.name})
-            </h2>
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-bold text-sky-200 hidden sm:inline">Đang đánh giá tiết học:</span>
+              <div className="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white font-black text-sm sm:text-base border-2 border-sky-300 shadow-sm flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>LỚP {currentClass?.name}</span>
+                <span className="text-xs font-normal text-sky-200">({currentGrade?.name})</span>
+              </div>
+            </div>
           </div>
 
           {/* Section 1: Lesson Diary Entry - Tự động theo PPCT */}
@@ -797,8 +864,18 @@ export function LessonEvaluator({
                 <p className="text-xs text-slate-500 mt-0.5">Tích chọn các học sinh cần đánh giá hàng loạt rồi nhấn nút đặt nhanh để tiết kiệm thời gian!</p>
               </div>
 
-              {/* Quick Preset Actions */}
-              <div className="flex gap-2 flex-wrap">
+              {/* Quick Preset Actions & Lucky Wheel */}
+              <div className="flex gap-2 flex-wrap items-center">
+                <button
+                  type="button"
+                  onClick={() => setShowWheelInLesson(true)}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105"
+                  title="Mở vòng quay gọi tên ngẫu nhiên cho lớp này"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-200 animate-spin" />
+                  <span>🎡 Vòng quay gọi tên</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handleSetDefaultsAll('normal')}
@@ -929,7 +1006,9 @@ export function LessonEvaluator({
                         <tr 
                           key={s.id} 
                           className={`hover:bg-slate-50/50 dark:hover:bg-slate-750/20 transition-all ${
-                            isAbsent 
+                            wheelHighlightedStudentId === s.id
+                              ? 'bg-amber-100/70 dark:bg-amber-950/40 ring-2 ring-amber-400 border-l-4 border-l-amber-500'
+                              : isAbsent 
                               ? 'bg-rose-50/60 dark:bg-rose-950/25 border-l-4 border-l-rose-500' 
                               : isSelected 
                               ? 'bg-blue-50/20 dark:bg-blue-900/10' 
@@ -1214,16 +1293,33 @@ export function LessonEvaluator({
               >
                 Hủy bỏ
               </button>
-              <button
-                type="submit"
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
-              </button>
+              {readOnly ? (
+                <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold rounded-xl text-xs flex items-center gap-2">
+                  <span>🔒</span> Đang ở chế độ Chỉ Xem (Không thể lưu tiết học)
+                </div>
+              ) : (
+                <button
+                  type="submit"
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
+                </button>
+              )}
             </div>
           )}
 
         </form>
+      )}
+
+      {/* Lucky Wheel Modal during lesson evaluation */}
+      {showWheelInLesson && (
+        <LuckyWheelModal 
+          isOpen={showWheelInLesson}
+          onClose={() => setShowWheelInLesson(false)}
+          students={classStudents.filter(s => !absentStudentIds.includes(s.id))}
+          className={classes.find(c => c.id === selectedClassId)?.name || ''}
+          onSaveResult={handleWheelResultInLesson}
+        />
       )}
 
     </div>

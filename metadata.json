@@ -1,6 +1,6 @@
 {
-  "name": "Quản Lý Lớp Học",
-  "description": "Hệ thống Quản Lý Lớp Học, phân phối chương trình Tin học Lớp 3, Lớp 4 và Công nghệ Lớp 5, nhật ký dạy học và học bạ thông minh.",
+  "name": "TRỌ LÝ SỐ TIN HỌC",
+  "description": "TRỌ LÝ SỐ TIN HỌC - Phân phối chương trình Tin học Lớp 3, Lớp 4 và Công nghệ Lớp 5, nhật ký dạy học và học bạ thông minh.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { User, Users, Search, Award, Sparkles, BookOpen, Clock, Heart, Edit2, Check, RefreshCw, AlertCircle, Calendar, Trash2, CheckSquare, Square } from 'lucide-react';
+import { User, Users, Search, Award, Sparkles, BookOpen, Clock, Heart, Edit2, Check, RefreshCw, AlertCircle, Calendar, Trash2, CheckSquare, Square, Lock } from 'lucide-react';
 import { Class, Student, Assessment, Comment, Grade } from '../types';
 
 interface StudentPortfolioProps {
@@ -13,6 +13,7 @@ interface StudentPortfolioProps {
   grades: Grade[];
   assessments: Assessment[];
   comments: Comment[];
+  readOnly?: boolean;
   onGenerateAIComment: (studentId: string) => Promise<string>;
   onAddComment: (studentId: string, content: string, type: 'AI' | 'Thủ công') => void;
   onDeleteComment: (id: string) => void;
@@ -24,6 +25,7 @@ export function StudentPortfolio({
   grades,
   assessments,
   comments,
+  readOnly = false,
   onGenerateAIComment,
   onAddComment,
   onDeleteComment
@@ -38,6 +40,7 @@ export function StudentPortfolio({
 
   // Manual comments state
   const [manualText, setManualText] = useState('');
+  const [classFilter, setClassFilter] = useState('');
 
   // Bulk AI Generation state
   const [aiMode, setAiMode] = useState<'single' | 'bulk'>('single');
@@ -80,7 +83,7 @@ export function StudentPortfolio({
   };
 
   const handleTriggerBulkAIComments = async () => {
-    if (bulkSelectedStudentIds.length === 0) return;
+    if (readOnly || bulkSelectedStudentIds.length === 0) return;
     setIsBulkGenerating(true);
     setBulkErrorText('');
     setBulkSuccessMsg('');
@@ -109,6 +112,7 @@ export function StudentPortfolio({
   };
 
   const handleSaveAllBulkComments = () => {
+    if (readOnly) return;
     let savedCount = 0;
     (Object.entries(bulkGeneratedComments) as [string, string][]).forEach(([studentId, commentText]) => {
       if (commentText && commentText.trim() && !commentText.includes('Không thể tạo nhận xét')) {
@@ -159,7 +163,7 @@ export function StudentPortfolio({
 
   // Trigger Gemini comment composer
   const handleTriggerAIComment = async () => {
-    if (!selectedStudentId) return;
+    if (readOnly || !selectedStudentId) return;
     setIsGenerating(true);
     setErrorText('');
     setAiGeneratedText('');
@@ -175,30 +179,72 @@ export function StudentPortfolio({
   };
 
   const handleSaveAIComment = () => {
-    if (!selectedStudentId || !aiGeneratedText.trim()) return;
+    if (readOnly || !selectedStudentId || !aiGeneratedText.trim()) return;
     onAddComment(selectedStudentId, aiGeneratedText.trim(), 'AI');
     setAiGeneratedText('');
   };
 
   const handleSaveManualComment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedStudentId || !manualText.trim()) return;
+    if (readOnly || !selectedStudentId || !manualText.trim()) return;
     onAddComment(selectedStudentId, manualText.trim(), 'Thủ công');
     setManualText('');
   };
 
-  // Student search filtered
-  const filteredStudents = students.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.studentId.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Student search and class filtered
+  const filteredStudents = students.filter(s => {
+    const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.studentId.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchClass = classFilter ? s.classId === classFilter : true;
+    return matchSearch && matchClass;
+  });
 
   return (
-    <div id="student-portfolio-container" className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div id="student-portfolio-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể xem hồ sơ cá nhân hóa từng học sinh, lịch sử đánh giá và nhận xét học bạ. Chức năng sinh nhận xét AI và chỉnh sửa nhận xét đã được khóa.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
       
       {/* 1. Left Sidebar: Student Selection list */}
-      <div id="portfolio-roster" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs lg:col-span-1 h-max space-y-4 vibrant-card">
-        <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm font-display">Danh Sách Học Sinh</h3>
+      <div id="portfolio-roster" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs lg:col-span-1 h-max space-y-3.5 vibrant-card">
+        <div className="flex items-center justify-between">
+          <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-sm font-display">Danh Sách Học Sinh</h3>
+          <span className="text-[11px] font-bold text-slate-400">{filteredStudents.length} HS</span>
+        </div>
+
+        {/* Class Filter Dropdown (Nền xanh đậm chữ trắng cho dễ quan sát) */}
+        <div className="space-y-1">
+          <label className="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+            Lọc theo lớp học:
+          </label>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            className="w-full px-3 py-2 text-xs font-black rounded-xl border-2 border-blue-900 bg-[#0f2444] text-white outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-sm"
+          >
+            <option value="" className="bg-[#0f2444] text-white font-bold py-1">-- Tất cả Lớp ({students.length} HS) --</option>
+            {classes.map(c => {
+              const count = students.filter(s => s.classId === c.id).length;
+              return (
+                <option key={c.id} value={c.id} className="bg-[#0f2444] text-white font-bold py-1">
+                  Lớp {c.name} ({count} HS)
+                </option>
+              );
+            })}
+          </select>
+        </div>
         
         {/* Quick Search */}
         <div className="relative">
@@ -265,8 +311,8 @@ export function StudentPortfolio({
                   <h2 className="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-display">{currentStudent.name}</h2>
                   <p className="text-xs text-slate-400 font-mono mt-0.5">Mã học sinh: {currentStudent.studentId}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                      Lớp: {studentClass?.name || 'Không rõ'}
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-[#0f2444] text-white border-2 border-sky-400 shadow-sm">
+                      <span>🎯</span> Lớp {studentClass?.name || 'Không rõ'}
                     </span>
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-800 dark:bg-slate-700 dark:text-slate-300">
                       Khối: {studentGrade?.name || 'Không rõ'}
@@ -340,22 +386,29 @@ export function StudentPortfolio({
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleTriggerAIComment}
-                      disabled={isGenerating || totalLessonsCount === 0}
-                      className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {isGenerating ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" /> Đang nhận xét...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4" /> Sinh nhận xét AI
-                        </>
-                      )}
-                    </button>
+                    {readOnly ? (
+                      <div className="px-3.5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-not-allowed select-none">
+                        <Lock className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Sinh nhận xét AI (Đã khóa ở chế độ xem)</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleTriggerAIComment}
+                        disabled={isGenerating || totalLessonsCount === 0}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        {isGenerating ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" /> Đang nhận xét...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" /> Sinh nhận xét AI
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
 
                   {/* Show error */}
@@ -381,6 +434,7 @@ export function StudentPortfolio({
                       <textarea
                         value={aiGeneratedText}
                         onChange={(e) => setAiGeneratedText(e.target.value)}
+                        readOnly={readOnly}
                         className="w-full h-24 p-3 border border-blue-200 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/10"
                       ></textarea>
                       <div className="flex justify-end gap-2">
@@ -391,13 +445,15 @@ export function StudentPortfolio({
                         >
                           Bỏ qua
                         </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveAIComment}
-                          className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 cursor-pointer"
-                        >
-                          <Check className="w-3.5 h-3.5" /> Lưu vào Sổ nhận xét học kỳ
-                        </button>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={handleSaveAIComment}
+                            className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Lưu vào Sổ nhận xét học kỳ
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -411,34 +467,53 @@ export function StudentPortfolio({
                       <select
                         value={bulkClassId}
                         onChange={(e) => handleBulkClassChange(e.target.value)}
-                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer min-w-[150px]"
+                        className="px-3.5 py-2 text-xs font-extrabold rounded-xl border border-slate-700 bg-slate-900 text-white outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer min-w-[180px] shadow-sm"
                         disabled={isBulkGenerating}
                       >
-                        {classes.map(c => (
-                          <option key={c.id} value={c.id}>Lớp {c.name}</option>
-                        ))}
+                        {grades.map(g => {
+                          const gradeClasses = classes
+                            .filter(c => c.gradeId === g.id)
+                            .sort((a, b) => a.name.localeCompare(b.name, 'vi', { numeric: true }));
+                          if (gradeClasses.length === 0) return null;
+                          return (
+                            <optgroup key={g.id} label={`--- ${g.name} ---`} className="bg-slate-950 text-sky-400 font-black">
+                              {gradeClasses.map(c => (
+                                <option key={c.id} value={c.id} className="bg-slate-900 text-white font-bold py-1">
+                                  Lớp {c.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
                       </select>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleTriggerBulkAIComments}
-                        disabled={isBulkGenerating || bulkSelectedStudentIds.length === 0}
-                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        {isBulkGenerating ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" /> Đang tạo... {bulkProgress ? `(${bulkProgress.current}/${bulkProgress.total})` : ''}
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4" /> Sinh nhận xét AI cho lớp ({bulkSelectedStudentIds.length})
-                          </>
-                        )}
-                      </button>
+                      {readOnly ? (
+                        <div className="px-3.5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-not-allowed select-none">
+                          <Lock className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Sinh nhận xét AI cả lớp (Đã khóa ở chế độ xem)</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleTriggerBulkAIComments}
+                          disabled={isBulkGenerating || bulkSelectedStudentIds.length === 0}
+                          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {isBulkGenerating ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" /> Đang tạo... {bulkProgress ? `(${bulkProgress.current}/${bulkProgress.total})` : ''}
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4" /> Sinh nhận xét AI cho lớp ({bulkSelectedStudentIds.length})
+                            </>
+                          )}
+                        </button>
+                      )}
 
-                      {Object.keys(bulkGeneratedComments).length > 0 && !isBulkGenerating && (
+                      {!readOnly && Object.keys(bulkGeneratedComments).length > 0 && !isBulkGenerating && (
                         <button
                           type="button"
                           onClick={handleSaveAllBulkComments}
@@ -589,17 +664,24 @@ export function StudentPortfolio({
                 </h3>
 
                 {/* Add custom Manual remark */}
-                <form onSubmit={handleSaveManualComment} className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Viết nhận xét thủ công..."
-                    value={manualText}
-                    onChange={(e) => setManualText(e.target.value)}
-                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none"
-                    required
-                  />
-                  <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer">Lưu</button>
-                </form>
+                {!readOnly ? (
+                  <form onSubmit={handleSaveManualComment} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Viết nhận xét thủ công..."
+                      value={manualText}
+                      onChange={(e) => setManualText(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 outline-none"
+                      required
+                    />
+                    <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer">Lưu</button>
+                  </form>
+                ) : (
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-750/50 rounded-xl border border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-xs flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Chế độ Xem tham khảo: Chỉ xem lịch sử nhận xét học bạ, không thêm hoặc sửa nhận xét.</span>
+                  </div>
+                )}
 
                 {studentComments.length === 0 ? (
                   <p className="text-center text-xs text-slate-400 py-6">Chưa ghi nhận đánh giá học bạ nào.</p>
@@ -623,13 +705,15 @@ export function StudentPortfolio({
                         <p className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
                           {c.content}
                         </p>
-                        <button
-                          onClick={() => onDeleteComment(c.id)}
-                          className="absolute right-2 top-2 p-1 text-slate-400 hover:text-rose-500 rounded hidden group-hover:block transition-all cursor-pointer"
-                          title="Xóa nhận xét"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {!readOnly && (
+                          <button
+                            onClick={() => onDeleteComment(c.id)}
+                            className="absolute right-2 top-2 p-1 text-slate-400 hover:text-rose-500 rounded hidden group-hover:block transition-all cursor-pointer"
+                            title="Xóa nhận xét"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -693,5 +777,6 @@ export function StudentPortfolio({
       </div>
 
     </div>
+  </div>
   );
 }

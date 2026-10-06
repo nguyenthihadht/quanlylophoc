@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek } from '../types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek, WheelSpinRecord } from '../types';
 import { loadStateFromFirestore, saveStateToFirestore } from './firebase';
 
 function generateUniqueId(prefix: string): string {
@@ -21,6 +21,7 @@ const DEFAULT_STATE = {
   comments: [] as Comment[],
   scores: [] as SemesterScore[],
   timeline: [] as TimelineWeek[],
+  wheelRecords: [] as WheelSpinRecord[],
   settings: {
     schoolName: 'Trường Tiểu học Thuận Giao',
     teacherName: 'Cô Nguyễn Thị Hà',
@@ -650,6 +651,108 @@ export class ClassTrackerAPI {
     return matchingWeeks.find(w => !w.classId && !w.gradeId) || matchingWeeks[0];
   }
 
+  // Lucky Wheel Records & Assessment Synchronization
+  public static getWheelRecords(classId?: string): WheelSpinRecord[] {
+    const list = this.cache.wheelRecords || [];
+    if (!classId) return list;
+    return list.filter(r => r.classId === classId);
+  }
+
+  public static addWheelRecord(record: Omit<WheelSpinRecord, 'id'>): WheelSpinRecord {
+    if (!this.cache.wheelRecords) {
+      this.cache.wheelRecords = [];
+    }
+    const newRecord: WheelSpinRecord = {
+      ...record,
+      id: generateUniqueId('wheel')
+    };
+    this.cache.wheelRecords = [newRecord, ...this.cache.wheelRecords];
+
+    // Automatically synchronize answer note and rating to the class/lesson assessment
+    this.syncWheelToAssessment(newRecord);
+
+    this.persist();
+    return newRecord;
+  }
+
+  public static clearWheelRecords(classId?: string): void {
+    if (!this.cache.wheelRecords) return;
+    if (classId) {
+      this.cache.wheelRecords = this.cache.wheelRecords.filter(r => r.classId !== classId);
+    } else {
+      this.cache.wheelRecords = [];
+    }
+    this.persist();
+  }
+
+  private static syncWheelToAssessment(record: WheelSpinRecord): void {
+    if (!this.cache.assessments) this.cache.assessments = [];
+    if (!this.cache.lessons) this.cache.lessons = [];
+
+    const todayDate = record.date || new Date().toISOString().split('T')[0];
+    
+    // Find or create lesson for this class today
+    let targetLesson = this.cache.lessons.find(l => l.classId === record.classId && l.date === todayDate);
+    if (!targetLesson) {
+      // Find the latest lesson of this class or create today's lesson
+      const classLessons = this.cache.lessons.filter(l => l.classId === record.classId);
+      if (classLessons.length > 0) {
+        targetLesson = [...classLessons].sort((a, b) => b.date.localeCompare(a.date))[0];
+      }
+    }
+
+    if (!targetLesson) {
+      targetLesson = {
+        id: generateUniqueId('lesson'),
+        date: todayDate,
+        classId: record.classId,
+        lessonName: `Tiết học ngày ${todayDate}`,
+        content: 'Hoạt động học tập & Vòng xoay gọi tên ngẫu nhiên',
+        createdBy: this.cache.settings?.teacherName || 'Cô Nguyễn Thị Hà',
+        notes: `Ghi nhận từ Vòng Xoay Kỳ Diệu`
+      };
+      this.cache.lessons.push(targetLesson);
+    }
+
+    // Map star rating to completion & attitude
+    const completion = record.stars === 3 ? 'Hoàn thành tốt' : record.stars === 2 ? 'Hoàn thành' : 'Chưa hoàn thành';
+    const attitude = record.stars >= 2 ? 'Tích cực' : 'Bình thường';
+    const noteFormatted = record.note && record.note.trim() 
+      ? `[Vòng quay ⭐x${record.stars} - ${record.ratingText}]: ${record.note.trim()}`
+      : `[Vòng quay ⭐x${record.stars}]: ${record.ratingText}`;
+
+    const existingAssessIndex = this.cache.assessments.findIndex(
+      a => a.studentId === record.studentId && a.lessonId === targetLesson!.id
+    );
+
+    if (existingAssessIndex > -1) {
+      const current = this.cache.assessments[existingAssessIndex];
+      const combinedNote = current.note 
+        ? `${current.note}; ${noteFormatted}` 
+        : noteFormatted;
+      this.cache.assessments[existingAssessIndex] = {
+        ...current,
+        completion,
+        attitude,
+        note: combinedNote
+      };
+    } else {
+      const newAssessment: Assessment = {
+        id: generateUniqueId('assess'),
+        studentId: record.studentId,
+        lessonId: targetLesson.id,
+        date: todayDate,
+        completion,
+        attitude,
+        skill: record.stars === 3 ? 'Thành thạo' : 'Đạt',
+        cooperation: 'Tốt',
+        note: noteFormatted,
+        isAbsent: false
+      };
+      this.cache.assessments.push(newAssessment);
+    }
+  }
+
   // Backup & Restore
   public static exportBackup(): string {
     const backup: SystemBackup = {
@@ -662,6 +765,7 @@ export class ClassTrackerAPI {
       comments: this.getComments(),
       scores: this.getScores(),
       timeline: this.getTimeline(),
+      wheelRecords: this.getWheelRecords(),
       settings: this.getSettings(),
       backupDate: new Date().toISOString()
     };
@@ -687,6 +791,7 @@ export class ClassTrackerAPI {
           comments: backup.comments || [],
           scores: backup.scores || [],
           timeline: backup.timeline || [],
+          wheelRecords: backup.wheelRecords || [],
           settings: backup.settings || {
             schoolName: 'Trường Tiểu học Thuận Giao',
             teacherName: 'Cô Nguyễn Thị Hà',

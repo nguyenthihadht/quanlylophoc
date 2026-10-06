@@ -10,6 +10,7 @@ import { ClassTrackerAPI } from '../lib/api';
 
 interface BackupSettingsProps {
   settings: AppSettings;
+  readOnly?: boolean;
   onUpdateSettings: (settings: Partial<AppSettings>) => void;
   onExportBackup: () => string;
   onImportBackup: (json: string) => boolean;
@@ -17,6 +18,7 @@ interface BackupSettingsProps {
 
 export function BackupSettings({
   settings,
+  readOnly = false,
   onUpdateSettings,
   onExportBackup,
   onImportBackup
@@ -32,6 +34,7 @@ export function BackupSettings({
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return;
     onUpdateSettings({
       schoolName: schoolName.trim(),
       teacherName: teacherName.trim(),
@@ -121,7 +124,22 @@ export function BackupSettings({
   };
 
   return (
-    <div id="backup-settings-container" className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div id="backup-settings-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể xem thông tin cấu hình và tải bản sao lưu dự phòng. Chức năng đổi mật khẩu, lưu cài đặt và khôi phục cơ sở dữ liệu đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       
       {/* 1. Global App Configuration */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-4 vibrant-card">
@@ -156,7 +174,7 @@ export function BackupSettings({
           </div>
 
           <div className="pt-2">
-            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase mb-1.5">Mật khẩu Quản trị viên (Mặc định: 123456)</label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase mb-1.5">Mật khẩu Quản trị viên</label>
             <div className="relative">
               <input
                 type={showAdminPass ? 'text' : 'password'}
@@ -421,5 +439,6 @@ export function BackupSettings({
       </div>
 
     </div>
+  </div>
   );
 }

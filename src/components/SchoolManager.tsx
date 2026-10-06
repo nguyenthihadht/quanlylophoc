@@ -12,6 +12,7 @@ interface SchoolManagerProps {
   grades: Grade[];
   classes: Class[];
   students: Student[];
+  readOnly?: boolean;
   onAddYear: (name: string) => void;
   onUpdateYear: (id: string, name: string) => void;
   onDeleteYear: (id: string) => void;
@@ -33,6 +34,7 @@ export function SchoolManager({
   grades,
   classes,
   students,
+  readOnly = false,
   onAddYear,
   onUpdateYear,
   onDeleteYear,
@@ -205,6 +207,20 @@ export function SchoolManager({
 
   return (
     <div id="school-manager-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể xem toàn bộ cơ cấu Khối, Lớp học và Giáo viên. Các thao tác thêm, sửa, xóa cấu trúc đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
       {/* Feedback Notification Banner */}
       {feedbackMessage && (
         <div 
@@ -272,7 +288,25 @@ export function SchoolManager({
         
         {/* Sidebar Creation Form */}
         <div id="school-manager-form-panel" className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs md:col-span-1 h-max">
-          {activeTab === 'year' && (
+          {readOnly ? (
+            <div className="text-center py-6 space-y-3">
+              <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 text-amber-500 rounded-2xl flex items-center justify-center mx-auto text-xl border border-amber-200 dark:border-amber-800">
+                🔒
+              </div>
+              <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">Chế độ Chỉ Xem</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Biểu mẫu thêm và chỉnh sửa Lớp / Khối / Năm học được tạm ẩn trong phiên tham khảo của Đồng nghiệp để bảo vệ an toàn dữ liệu.
+              </p>
+              <div className="pt-2 text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-750/40 p-3 rounded-xl border border-slate-100 dark:border-slate-700 text-left space-y-1.5">
+                <p className="font-bold text-slate-700 dark:text-slate-300">💡 Quyền xem của Thầy/Cô:</p>
+                <p>• Tra cứu chi tiết từng lớp học và sĩ số</p>
+                <p>• Xem cơ cấu phân công giáo viên chủ nhiệm</p>
+                <p>• Danh sách học sinh theo khối và môn</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'year' && (
             <form onSubmit={handleYearSubmit} className="space-y-4">
               <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-blue-500" />
@@ -465,6 +499,8 @@ export function SchoolManager({
               </div>
             </form>
           )}
+            </>
+          )}
         </div>
 
         {/* Data List Panel */}
@@ -494,32 +530,34 @@ export function SchoolManager({
                           </p>
                         </div>
                       </div>
-                      <div className="flex gap-1.5">
-                        {!year.isCurrent && (
+                      {!readOnly && (
+                        <div className="flex gap-1.5">
+                          {!year.isCurrent && (
+                            <button
+                              onClick={() => onSetCurrentYear(year.id)}
+                              className="p-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
+                              title="Đặt làm năm học hiện tại"
+                            >
+                              Chọn dùng
+                            </button>
+                          )}
                           <button
-                            onClick={() => onSetCurrentYear(year.id)}
-                            className="p-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-600 dark:text-slate-300 rounded-lg transition-all cursor-pointer"
-                            title="Đặt làm năm học hiện tại"
+                            onClick={() => startEditYear(year)}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
                           >
-                            Chọn dùng
+                            <Edit2 className="w-4 h-4" />
                           </button>
-                        )}
-                        <button
-                          onClick={() => startEditYear(year)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          id={`btn-delete-year-${year.id}`}
-                          type="button"
-                          onClick={() => setYearToDelete(year)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                          title="Xóa năm học"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                          <button
+                            id={`btn-delete-year-${year.id}`}
+                            type="button"
+                            onClick={() => setYearToDelete(year)}
+                            className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                            title="Xóa năm học"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -558,26 +596,28 @@ export function SchoolManager({
                             </div>
                           </div>
                         </div>
-                        <div className="flex gap-1.5">
-                          <button
-                            id={`btn-edit-grade-${grade.id}`}
-                            type="button"
-                            onClick={() => startEditGrade(grade)}
-                            className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                            title="Sửa khối"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            id={`btn-delete-grade-${grade.id}`}
-                            type="button"
-                            onClick={() => setGradeToDelete(grade)}
-                            className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                            title="Xóa khối"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {!readOnly && (
+                          <div className="flex gap-1.5">
+                            <button
+                              id={`btn-edit-grade-${grade.id}`}
+                              type="button"
+                              onClick={() => startEditGrade(grade)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Sửa khối"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              id={`btn-delete-grade-${grade.id}`}
+                              type="button"
+                              onClick={() => setGradeToDelete(grade)}
+                              className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Xóa khối"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -713,13 +753,13 @@ export function SchoolManager({
                             }}
                             className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 border ${
                               isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 shadow-sm scale-[1.02]'
-                                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                                ? 'bg-blue-600 text-white border-sky-400 ring-2 ring-sky-300 shadow-sm scale-[1.03] font-black'
+                                : 'bg-[#0f2444] hover:bg-[#163a66] text-white font-bold border-blue-900/80'
                             }`}
                           >
                             <span>Lớp {c.name}</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                              isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                              isSelected ? 'bg-white/20 text-white' : 'bg-blue-950/80 text-blue-200 border border-blue-700/60'
                             }`}>
                               {countHS} HS
                             </span>
@@ -890,22 +930,24 @@ export function SchoolManager({
                               <div><span className="font-bold text-blue-300">{maleCount}</span> Nam</div>
                               <div><span className="font-bold text-pink-300">{femaleCount}</span> Nữ</div>
                             </div>
-                            <div className="flex flex-col gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => startEditClass(currentClass)}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" /> Sửa lớp
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setClassToDelete(currentClass)}
-                                className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-rose-500/40"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Xóa lớp
-                              </button>
-                            </div>
+                            {!readOnly && (
+                              <div className="flex flex-col gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditClass(currentClass)}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" /> Sửa lớp
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setClassToDelete(currentClass)}
+                                  className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600 text-rose-200 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border border-rose-500/40"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Xóa lớp
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

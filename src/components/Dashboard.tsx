@@ -13,6 +13,7 @@ interface DashboardProps {
   students: Student[];
   lessons: Lesson[];
   assessments: Assessment[];
+  readOnly?: boolean;
   onNavigate: (tab: string) => void;
   onSelectClassForLesson: (classId: string) => void;
 }
@@ -23,6 +24,7 @@ export function Dashboard({
   students,
   lessons,
   assessments,
+  readOnly = false,
   onNavigate,
   onSelectClassForLesson
 }: DashboardProps) {
@@ -57,6 +59,20 @@ export function Dashboard({
 
   return (
     <div id="dashboard-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chào mừng Thầy/Cô Đồng nghiệp tham khảo (Chế độ Chỉ Xem)</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Bạn có thể tự do xem toàn bộ số liệu tổng quan, cơ cấu học sinh các lớp, phân phối chương trình và nhật ký giảng dạy. Dữ liệu gốc đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div id="dashboard-banner" className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-850 p-6 rounded-2xl border border-blue-100 dark:border-slate-700 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
