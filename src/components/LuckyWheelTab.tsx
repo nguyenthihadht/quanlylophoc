@@ -1556,7 +1556,7 @@ export function LuckyWheelModal({
               <div>
                 <p className="text-[11px] font-bold text-slate-400 uppercase">HỌC SINH ĐƯỢC GỌI TÊN LÀ</p>
                 <div className="py-3 px-4 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 my-2">
-                  <h3 className="text-2xl font-black text-slate-850 dark:text-white font-display">
+                  <h3 className="text-2xl font-black text-black dark:text-white font-display whitespace-nowrap">
                     {winnerStudent.name}
                   </h3>
                 </div>

@@ -982,13 +982,13 @@ export function LessonEvaluator({
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                       </th>
-                      <th className="px-5 py-3">Học sinh</th>
-                      <th className="px-4 py-3 text-center w-36 font-black text-rose-600 dark:text-rose-400">ĐIỂM DANH (VẮNG)</th>
-                      <th className="px-5 py-3 text-center min-w-[190px] font-black text-blue-600 dark:text-blue-400">KIẾN THỨC</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Thái độ</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Kỹ năng</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Hợp tác</th>
-                      <th className="px-5 py-3 min-w-[240px]">Ghi chú (lưu ý đặc biệt / lý do vắng)</th>
+                      <th className="px-5 py-3 min-w-[240px] whitespace-nowrap font-black text-slate-800 dark:text-slate-200">Họ và tên học sinh</th>
+                      <th className="px-4 py-3 text-center w-36 whitespace-nowrap font-black text-rose-600 dark:text-rose-400">ĐIỂM DANH (VẮNG)</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap font-black text-blue-600 dark:text-blue-400">KIẾN THỨC</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Thái độ</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Kỹ năng</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Hợp tác</th>
+                      <th className="px-5 py-3 min-w-[240px] whitespace-nowrap">Ghi chú (lưu ý đặc biệt / lý do vắng)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm">
@@ -1031,19 +1031,29 @@ export function LessonEvaluator({
                             />
                           </td>
 
-                          {/* Student Info */}
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2">
-                              <p className={`font-semibold transition-colors ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-850 dark:text-slate-100'}`}>
+                          {/* Student Info: Họ và tên học sinh nổi chữ màu đen và trên 1 hàng */}
+                          <td className="px-5 py-3.5 whitespace-nowrap min-w-[240px]">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <span 
+                                className={`text-[15px] font-black tracking-tight whitespace-nowrap transition-colors ${
+                                  isAbsent 
+                                    ? 'line-through text-rose-600 dark:text-rose-400 font-bold' 
+                                    : 'text-black dark:text-white'
+                                }`}
+                              >
                                 {s.name}
-                              </p>
+                              </span>
+                              {s.studentId && (
+                                <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-650 whitespace-nowrap">
+                                  {s.studentId}
+                                </span>
+                              )}
                               {isAbsent && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs whitespace-nowrap">
                                   VẮNG
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-400 font-mono mt-0.5">{s.studentId}</p>
                           </td>
 
                           {/* Cột Điểm danh vắng (Chọn nhanh trạng thái vắng) */}

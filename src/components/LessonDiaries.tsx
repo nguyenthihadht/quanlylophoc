@@ -320,13 +320,13 @@ export function LessonDiaries({
                             {student?.studentId || 'Chưa rõ'}
                           </span>
                         </td>
-                        <td className="px-5 py-3 font-semibold">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`font-extrabold text-sm ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-50'}`}>
+                        <td className="px-5 py-3 font-semibold whitespace-nowrap min-w-[200px]">
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span className={`font-black text-[15px] whitespace-nowrap tracking-tight ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400' : 'text-black dark:text-white'}`}>
                               {student?.name || 'Không có tên'}
                             </span>
                             {isAbsent && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white shadow-xs whitespace-nowrap">
                                 VẮNG
                               </span>
                             )}
