@@ -136,8 +136,8 @@ export function LessonDiaries({
                   <div key={lesson.id} className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 dark:border-slate-700/80 shadow-xs flex flex-col justify-between transition-all hover:shadow-xs">
                     <div>
                       <div className="flex justify-between items-start">
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                          Lớp {targetClass?.name} ({targetGrade?.name})
+                        <span className="px-3 py-1 rounded-xl text-xs font-black bg-[#0f2444] text-white border border-sky-400/80 shadow-xs flex items-center gap-1.5">
+                          <span>🏫</span> Lớp {targetClass?.name} ({targetGrade?.name})
                         </span>
                         <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5 flex-wrap justify-end">
                           <Calendar className="w-3.5 h-3.5 text-blue-500" /> {lesson.date}
@@ -241,9 +241,9 @@ export function LessonDiaries({
 
           {/* Lesson Summary Info Block */}
           <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
-                Lớp {lessonClass?.name}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-[#0f2444] text-white border-2 border-sky-400 shadow-sm flex items-center gap-1.5">
+                <span>🎯</span> Lớp {lessonClass?.name}
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300">
                 {lessonGrade?.name}

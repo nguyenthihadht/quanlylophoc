@@ -52,6 +52,17 @@ export default function App() {
   const [showModalPassword, setShowModalPassword] = useState(false);
   const [modalPasswordError, setModalPasswordError] = useState('');
 
+  // Quick Change Admin Password Modal
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [changePassOldInput, setChangePassOldInput] = useState('');
+  const [changePassNewInput, setChangePassNewInput] = useState('');
+  const [changePassConfirmInput, setChangePassConfirmInput] = useState('');
+  const [showChangeOldPass, setShowChangeOldPass] = useState(false);
+  const [showChangeNewPass, setShowChangeNewPass] = useState(false);
+  const [showChangeConfirmPass, setShowChangeConfirmPass] = useState(false);
+  const [changePassError, setChangePassError] = useState('');
+  const [changePassSuccess, setChangePassSuccess] = useState('');
+
   // Toast notifications
   const [copyLinkToast, setCopyLinkToast] = useState<string | null>(null);
 
@@ -204,6 +215,56 @@ export default function App() {
     }
   };
 
+  // Administrator Password Change Handler
+  const handleChangeAdminPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    const currentActual = settings.adminPassword || '123456';
+    if (changePassOldInput !== currentActual) {
+      setChangePassError('Mật khẩu hiện tại không chính xác. Mật khẩu mặc định ban đầu là 123456.');
+      return;
+    }
+    if (!changePassNewInput.trim()) {
+      setChangePassError('Vui lòng nhập mật khẩu mới.');
+      return;
+    }
+    if (changePassNewInput.trim().length < 4) {
+      setChangePassError('Mật khẩu mới phải có ít nhất 4 ký tự để đảm bảo an toàn.');
+      return;
+    }
+    if (changePassNewInput.trim() !== changePassConfirmInput.trim()) {
+      setChangePassError('Xác nhận mật khẩu mới không trùng khớp. Vui lòng kiểm tra lại.');
+      return;
+    }
+
+    const updatedPass = changePassNewInput.trim();
+    ClassTrackerAPI.updateSettings({ adminPassword: updatedPass });
+    setSettings(prev => ({ ...prev, adminPassword: updatedPass }));
+    setChangePassError('');
+    setChangePassSuccess('Đã đổi mật khẩu Quản trị viên thành công! Mật khẩu mới có hiệu lực ngay lập tức.');
+    setChangePassOldInput('');
+    setChangePassNewInput('');
+    setChangePassConfirmInput('');
+    setCopyLinkToast('Đã đổi mật khẩu Quản trị viên thành công!');
+    setTimeout(() => {
+      setChangePassSuccess('');
+      setShowChangePasswordModal(false);
+      setCopyLinkToast(null);
+    }, 2500);
+  };
+
+  // Administrator Password Reset to default 123456
+  const handleResetToDefaultAdminPassword = () => {
+    if (window.confirm('Thầy/Cô có chắc chắn muốn đặt lại mật khẩu Quản trị viên về mặc định (123456)?')) {
+      const defaultPass = '123456';
+      ClassTrackerAPI.updateSettings({ adminPassword: defaultPass });
+      setSettings(prev => ({ ...prev, adminPassword: defaultPass }));
+      setChangePassOldInput(defaultPass);
+      setChangePassSuccess('Đã đặt lại mật khẩu về mặc định 123456 thành công! Bạn có thể nhập mật khẩu mới ngay.');
+      setChangePassError('');
+      setTimeout(() => setChangePassSuccess(''), 4000);
+    }
+  };
+
   // Copy shareable link for colleagues (?role=viewer)
   const handleCopyColleagueShareLink = () => {
     const origin = window.location.origin;
@@ -271,6 +332,148 @@ export default function App() {
     }
   };
 
+  // Dedicated Reusable Modal for Changing Admin Password
+  const renderChangePasswordModal = () => {
+    if (!showChangePasswordModal) return null;
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+        <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-150 dark:border-slate-700">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xl font-bold border border-blue-200 dark:border-blue-800">
+                <KeyRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-850 dark:text-white font-display">
+                  ĐỔI MẬT KHẨU QUẢN TRỊ VIÊN
+                </h3>
+                <p className="text-[11px] text-slate-400">Cập nhật mật khẩu bảo vệ dữ liệu giáo viên</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowChangePasswordModal(false)}
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-slate-700 flex items-center justify-center cursor-pointer transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleChangeAdminPassword} className="space-y-3.5">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-600 dark:text-slate-350">
+                  MẬT KHẨU HIỆN TẠI (MẬT KHẨU CŨ):
+                </label>
+                <button
+                  type="button"
+                  onClick={handleResetToDefaultAdminPassword}
+                  className="text-[11px] text-blue-600 dark:text-sky-400 hover:underline font-semibold cursor-pointer"
+                >
+                  Quên mật khẩu? (Về 123456)
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showChangeOldPass ? 'text' : 'password'}
+                  value={changePassOldInput}
+                  onChange={(e) => { setChangePassOldInput(e.target.value); setChangePassError(''); }}
+                  placeholder="Mặc định ban đầu là 123456"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-blue-500/20 pr-10 font-mono shadow-xs"
+                  required
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowChangeOldPass(!showChangeOldPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showChangeOldPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-350 mb-1">
+                MẬT KHẨU MỚI:
+              </label>
+              <div className="relative">
+                <input
+                  type={showChangeNewPass ? 'text' : 'password'}
+                  value={changePassNewInput}
+                  onChange={(e) => { setChangePassNewInput(e.target.value); setChangePassError(''); }}
+                  placeholder="Nhập mật khẩu mới (tối thiểu 4 ký tự)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-blue-500/20 pr-10 font-mono shadow-xs"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowChangeNewPass(!showChangeNewPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showChangeNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-350 mb-1">
+                XÁC NHẬN MẬT KHẨU MỚI:
+              </label>
+              <div className="relative">
+                <input
+                  type={showChangeConfirmPass ? 'text' : 'password'}
+                  value={changePassConfirmInput}
+                  onChange={(e) => { setChangePassConfirmInput(e.target.value); setChangePassError(''); }}
+                  placeholder="Nhập lại mật khẩu mới"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-blue-500/20 pr-10 font-mono shadow-xs"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowChangeConfirmPass(!showChangeConfirmPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showChangeConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {changePassError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{changePassError}</span>
+              </div>
+            )}
+
+            {changePassSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 font-bold">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{changePassSuccess}</span>
+              </div>
+            )}
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowChangePasswordModal(false)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" /> Cập Nhật Mật Khẩu
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center space-y-3">
@@ -291,7 +494,7 @@ export default function App() {
           {/* Header Branding */}
           <div className="text-center space-y-2">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-bold shadow-2xs border border-blue-200 dark:border-blue-800">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> TRỌ LÝ SỐ TIN HỌC — Roster Học Sinh & Đánh Giá Tiết Dạy
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> TRỢ LÝ SỐ TIN HỌC — Roster Học Sinh & Đánh Giá Tiết Dạy
             </div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-850 dark:text-white tracking-tight font-display">
               CỔNG ĐĂNG NHẬP & PHÂN QUYỀN
@@ -435,6 +638,23 @@ export default function App() {
                   >
                     <KeyRound className="w-4 h-4" /> Đăng Nhập Quản Trị Viên
                   </button>
+
+                  <div className="flex items-center justify-center pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowChangePasswordModal(true);
+                        setChangePassError('');
+                        setChangePassSuccess('');
+                        setChangePassOldInput('');
+                        setChangePassNewInput('');
+                        setChangePassConfirmInput('');
+                      }}
+                      className="text-xs text-blue-600 dark:text-sky-400 font-bold hover:underline flex items-center gap-1.5 cursor-pointer py-1"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-amber-500" /> Đổi mật khẩu Quản trị viên
+                    </button>
+                  </div>
                 </form>
 
                 {/* Alternative Quick Google Login */}
@@ -462,8 +682,11 @@ export default function App() {
           </div>
 
           <div className="text-center text-xs text-slate-400">
-            © 2026 TRỌ LÝ SỐ TIN HỌC · Hệ thống phân quyền an toàn & bảo mật
+            © 2026 TRỢ LÝ SỐ TIN HỌC · Hệ thống phân quyền an toàn & bảo mật
           </div>
+
+          {/* Quick change password modal on login screen */}
+          {renderChangePasswordModal()}
 
         </div>
       </div>
@@ -565,6 +788,9 @@ export default function App() {
         </div>
       )}
 
+      {/* QUICK CHANGE PASSWORD MODAL FOR ADMIN */}
+      {renderChangePasswordModal()}
+
       {/* 1. PERSISTENT SIDEBAR - Desktop */}
       <aside className={`w-64 bg-white dark:bg-slate-800 border-r border-slate-150 dark:border-slate-700 flex flex-col justify-between fixed lg:static inset-y-0 left-0 z-40 transition-transform duration-200 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div>
@@ -574,7 +800,7 @@ export default function App() {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-base shadow-sm font-display">
                 T
               </div>
-              <span className="font-extrabold text-base text-blue-600 dark:text-blue-450 tracking-tight font-display">TRỌ LÝ SỐ TIN HỌC</span>
+              <span className="font-extrabold text-base text-blue-600 dark:text-blue-450 tracking-tight font-display">TRỢ LÝ SỐ TIN HỌC</span>
             </div>
             <button className="lg:hidden text-slate-400 hover:text-slate-600 cursor-pointer" onClick={() => setIsSidebarOpen(false)}>
               <X className="w-5 h-5" />
@@ -594,13 +820,29 @@ export default function App() {
                 </p>
               </div>
             </div>
-            {isReadOnly && (
+            {isReadOnly ? (
               <button
                 onClick={() => setShowAdminLoginModal(true)}
                 className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold cursor-pointer shrink-0 transition-all"
                 title="Đăng nhập tài khoản Quản trị viên"
               >
                 Mở khóa
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChangePasswordModal(true);
+                  setChangePassError('');
+                  setChangePassSuccess('');
+                  setChangePassOldInput('');
+                  setChangePassNewInput('');
+                  setChangePassConfirmInput('');
+                }}
+                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black cursor-pointer shrink-0 transition-all flex items-center gap-1 shadow-2xs"
+                title="Đổi mật khẩu Quản trị viên"
+              >
+                <KeyRound className="w-3 h-3" /> Đổi mã
               </button>
             )}
           </div>
@@ -702,6 +944,24 @@ export default function App() {
             </button>
           )}
 
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowChangePasswordModal(true);
+                setChangePassError('');
+                setChangePassSuccess('');
+                setChangePassOldInput('');
+                setChangePassNewInput('');
+                setChangePassConfirmInput('');
+              }}
+              className="w-full flex items-center gap-2 justify-center py-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 rounded-xl text-xs font-bold cursor-pointer transition-all border border-amber-300 dark:border-amber-800"
+              title="Đổi mật khẩu Quản trị viên"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" /> Đổi mật khẩu Quản trị
+            </button>
+          )}
+
           <div className="flex items-center gap-3">
             <div className={`w-9 h-9 ${isReadOnly ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-slate-700 dark:text-blue-300'} font-extrabold text-sm rounded-lg flex items-center justify-center uppercase`}>
               {isReadOnly ? 'ĐN' : (settings?.teacherName?.slice(-2) || 'GV')}
@@ -737,7 +997,7 @@ export default function App() {
             
             {/* Breadcrumbs navigation */}
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> TRỌ LÝ SỐ TIN HỌC</span>
+              <span className="text-slate-500 hover:underline cursor-pointer flex items-center gap-1" onClick={() => setActiveTab('dashboard')}><Home className="w-3.5 h-3.5" /> TRỢ LÝ SỐ TIN HỌC</span>
               <ChevronRight className="w-3 h-3 text-slate-300" />
               <span className="text-slate-800 dark:text-slate-200">{getTabTitle(activeTab)}</span>
             </div>
@@ -767,6 +1027,25 @@ export default function App() {
                 <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hidden md:flex items-center gap-1.5 shadow-2xs">
                   <span>👑</span> Quyền Quản trị viên
                 </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowChangePasswordModal(true);
+                    setChangePassError('');
+                    setChangePassSuccess('');
+                    setChangePassOldInput('');
+                    setChangePassNewInput('');
+                    setChangePassConfirmInput('');
+                  }}
+                  className="px-3.5 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-full text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02]"
+                  title="Đổi mật khẩu Quản trị viên"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span className="hidden sm:inline">Đổi mật khẩu</span>
+                  <span className="sm:hidden">Mật khẩu</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleCopyColleagueShareLink}
