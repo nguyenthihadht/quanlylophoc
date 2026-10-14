@@ -4,17 +4,25 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Calendar, CheckSquare, Sparkles, UserCheck, UserX, ChevronRight, ChevronLeft, ChevronDown, Save, ThumbsUp, AlertCircle, ArrowLeft, RotateCcw, Layers } from 'lucide-react';
+import { 
+  BookOpen, Calendar, CheckSquare, Sparkles, UserCheck, UserX, 
+  ChevronRight, ChevronLeft, ChevronDown, Save, ArrowLeft, RotateCcw, 
+  Layers, School, Check, ArrowRight
+} from 'lucide-react';
 import { Class, Student, Lesson, Assessment, TimelineWeek, Grade } from '../types';
 import { TIN_HOC_3_CURRICULUM, TIN_HOC_4_CURRICULUM, CONG_NGHE_5_CURRICULUM } from '../lib/curriculumData';
+import { ClassTrackerAPI } from '../lib/api';
+import { LuckyWheelModal } from './LuckyWheelTab';
 
 interface LessonEvaluatorProps {
+  key?: React.Key;
   classes: Class[];
   grades: Grade[];
   students: Student[];
   lessons: Lesson[];
   assessments: Assessment[];
   timeline: TimelineWeek[];
+  readOnly?: boolean;
   onSaveAssessments: (
     lessonId: string, 
     date: string, 
@@ -30,25 +38,26 @@ export function LessonEvaluator({
   lessons,
   assessments,
   timeline,
+  readOnly = false,
   onSaveAssessments,
   onAddLesson
 }: LessonEvaluatorProps) {
-  // Step 1: Grade and Class Selection
-  const [selectedGradeId, setSelectedGradeId] = useState<string>(() => {
-    const g3 = grades.find(g => g.name.includes('3'));
-    return g3?.id || grades[0]?.id || '';
-  });
-  const [selectedClassId, setSelectedClassId] = useState('');
+  // STRICT STEP ARCHITECTURE:
+  // selectedGradeId === null -> BƯỚC 1: CHỌN KHỐI (Không hiển thị danh sách lớp)
+  // selectedGradeId !== null && selectedClassId === null -> BƯỚC 2: CHỌN LỚP (Chỉ lớp thuộc khối đã chọn)
+  // selectedGradeId !== null && selectedClassId !== null -> BƯỚC 3: PHIẾU ĐÁNH GIÁ TIẾT HỌC & ĐIỂM DANH
+  const [selectedGradeId, setSelectedGradeId] = useState<string | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
 
-  // Keep selectedGradeId valid if grades change
+  // If the selected grade is no longer valid, reset to Step 1
   useEffect(() => {
-    if (!selectedGradeId && grades.length > 0) {
-      const g3 = grades.find(g => g.name.includes('3'));
-      setSelectedGradeId(g3?.id || grades[0].id);
+    if (selectedGradeId && grades.length > 0 && !grades.some(g => g.id === selectedGradeId)) {
+      setSelectedGradeId(null);
+      setSelectedClassId(null);
     }
   }, [grades, selectedGradeId]);
-  
-  // Step 2: Lesson Diary Form (Chọn tuần thay vì chọn ngày)
+
+  // Step 3 state: Form data
   const [selectedWeek, setSelectedWeek] = useState<number>(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     const matched = timeline.find(w => w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate);
@@ -56,6 +65,61 @@ export function LessonEvaluator({
   });
   const [lessonName, setLessonName] = useState('');
   const [lessonContent, setLessonContent] = useState('');
+
+  // Step 3 state: Class Roster with temporary assessments
+  const [classStudents, setClassStudents] = useState<Student[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [absentStudentIds, setAbsentStudentIds] = useState<string[]>([]);
+  const [tempAssessments, setTempAssessments] = useState<Record<string, {
+    completion: 'Hoàn thành tốt' | 'Hoàn thành' | 'Chưa hoàn thành';
+    attitude: 'Tích cực' | 'Bình thường' | 'Chưa tập trung';
+    skill: 'Thành thạo' | 'Đạt' | 'Cần hỗ trợ';
+    cooperation: 'Tốt' | 'Đạt' | 'Cần cố gắng';
+    note?: string;
+  }>>({});
+
+  const [notification, setNotification] = useState('');
+  const [showWheelInLesson, setShowWheelInLesson] = useState(false);
+  const [wheelHighlightedStudentId, setWheelHighlightedStudentId] = useState<string | null>(null);
+
+  // Xử lý khi học sinh được gọi và chấm điểm từ Vòng Xoay Kỳ Diệu trong tiết học
+  const handleWheelResultInLesson = (student: Student, stars: 1 | 2 | 3, note: string) => {
+    const starsMap: Record<1 | 2 | 3, string> = {
+      1: 'Ko trả lời được',
+      2: 'Trả lời đúng 1 phần',
+      3: 'Trả lời bài tốt'
+    };
+    const noteFormatted = note && note.trim()
+      ? `[Vòng quay ⭐x${stars} - ${starsMap[stars]}]: ${note.trim()}`
+      : `[Vòng quay ⭐x${stars}]: ${starsMap[stars]}`;
+
+    // Cập nhật ngay kết quả vào phiếu đánh giá của em
+    handleUpdateField(student.id, 'completion', stars === 3 ? 'Hoàn thành tốt' : stars === 2 ? 'Hoàn thành' : 'Chưa hoàn thành');
+    handleUpdateField(student.id, 'attitude', stars >= 2 ? 'Tích cực' : 'Bình thường');
+    handleUpdateField(student.id, 'skill', stars === 3 ? 'Thành thạo' : 'Đạt');
+    handleUpdateField(student.id, 'note', noteFormatted);
+
+    // Lưu vào lịch sử Vòng quay của hệ thống (chỉ khi không ở chế độ chỉ xem)
+    if (!readOnly) {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      ClassTrackerAPI.addWheelRecord({
+        studentId: student.id,
+        studentName: student.name,
+        classId: selectedClassId || '',
+        className: classes.find(c => c.id === selectedClassId)?.name || '',
+        timestamp: timeStr,
+        date: now.toISOString().split('T')[0],
+        stars,
+        ratingText: starsMap[stars],
+        note: note.trim()
+      });
+    }
+
+    setWheelHighlightedStudentId(student.id);
+    setShowWheelInLesson(false);
+    setTimeout(() => setWheelHighlightedStudentId(null), 8000);
+  };
 
   // Hàm tự động tìm tên bài giảng chính xác theo phân phối chương trình của lớp và tuần học
   const resolveLessonName = (weekNum: number, clsId: string): string => {
@@ -118,23 +182,20 @@ export function LessonEvaluator({
       setLessonName(resolved);
     }
   }, [selectedWeek, selectedClassId, timeline, classes, grades]);
-  
-  // Step 3: Class Roster with temporary assessments
-  const [isClassSelected, setIsClassSelected] = useState(false);
-  const [classStudents, setClassStudents] = useState<Student[]>([]);
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
-  const [absentStudentIds, setAbsentStudentIds] = useState<string[]>([]);
-  const [tempAssessments, setTempAssessments] = useState<Record<string, {
-    completion: 'Hoàn thành tốt' | 'Hoàn thành' | 'Chưa hoàn thành';
-    attitude: 'Tích cực' | 'Bình thường' | 'Chưa tập trung';
-    skill: 'Thành thạo' | 'Đạt' | 'Cần hỗ trợ';
-    cooperation: 'Tốt' | 'Đạt' | 'Cần cố gắng';
-    note?: string;
-  }>>({});
 
-  const [notification, setNotification] = useState('');
+  // Hành động chọn Khối (Bước 1 -> Bước 2)
+  const handleSelectGrade = (gradeId: string) => {
+    setSelectedGradeId(gradeId);
+    setSelectedClassId(null);
+  };
 
-  // Handle class pick
+  // Nút quay lại: Chọn lại khối (Bước 2 hoặc 3 -> Bước 1)
+  const handleBackToGrades = () => {
+    setSelectedGradeId(null);
+    setSelectedClassId(null);
+  };
+
+  // Hành động chọn Lớp (Bước 2 -> Bước 3)
   const handleSelectClass = (classId: string) => {
     setSelectedClassId(classId);
     const filtered = students.filter(s => s.classId === classId);
@@ -148,7 +209,7 @@ export function LessonEvaluator({
       setLessonName(resolved);
     }
 
-    // Initialize temporary assessments for every student with note field
+    // Khởi tạo đánh giá tạm thời cho từng học sinh
     const initial: typeof tempAssessments = {};
     filtered.forEach(s => {
       initial[s.id] = {
@@ -160,7 +221,11 @@ export function LessonEvaluator({
       };
     });
     setTempAssessments(initial);
-    setIsClassSelected(true);
+  };
+
+  // Nút quay lại: Chọn lại lớp (Bước 3 -> Bước 2)
+  const handleBackToClasses = () => {
+    setSelectedClassId(null);
   };
 
   // Đánh dấu nhanh học sinh vắng / có mặt
@@ -193,7 +258,21 @@ export function LessonEvaluator({
     });
   };
 
-  // Set default values for all students at once to save time
+  // Đặt lại cả lớp đi học đầy đủ
+  const handleResetAllPresent = () => {
+    setAbsentStudentIds([]);
+    setTempAssessments(curr => {
+      const next = { ...curr };
+      Object.keys(next).forEach(sId => {
+        if (next[sId]?.note === 'Vắng học') {
+          next[sId] = { ...next[sId], note: '' };
+        }
+      });
+      return next;
+    });
+  };
+
+  // Đặt nhanh giá trị đánh giá cho các học sinh đang được chọn (không vắng)
   const handleSetDefaultsAll = (level: 'excellent' | 'normal') => {
     const updated = { ...tempAssessments };
     classStudents.forEach(s => {
@@ -220,7 +299,7 @@ export function LessonEvaluator({
     setTempAssessments(updated);
   };
 
-  // Update specific student field (including note)
+  // Cập nhật từng trường đánh giá của học sinh
   const handleUpdateField = (
     studentId: string, 
     field: 'completion' | 'attitude' | 'skill' | 'cooperation' | 'note', 
@@ -235,9 +314,14 @@ export function LessonEvaluator({
     }));
   };
 
-  // Save Lesson and Assessments
+  // Lưu bài giảng và toàn bộ đánh giá học sinh
   const handleSaveAll = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) {
+      setNotification('🔒 Bạn đang ở Chế độ Xem tham khảo dành cho Đồng nghiệp — Chức năng lưu tiết học không khả dụng để bảo toàn dữ liệu.');
+      setTimeout(() => setNotification(''), 4000);
+      return;
+    }
     if (!selectedClassId || !lessonName.trim() || classStudents.length === 0) return;
 
     const todayDate = new Date().toISOString().split('T')[0];
@@ -248,7 +332,7 @@ export function LessonEvaluator({
       ? `Sĩ số: ${classStudents.length} · Có mặt: ${classStudents.length - absentStudents.length} · Vắng (${absentStudents.length}): ${absentSummary}`
       : `Sĩ số: ${classStudents.length} (Đầy đủ)`;
 
-    // 1. Create and Save the lesson diary entry with week and attendance info
+    // 1. Tạo và lưu nhật ký bài giảng (Lesson) với thông tin điểm danh
     const newLesson = onAddLesson({
       date: todayDate,
       classId: selectedClassId,
@@ -261,7 +345,7 @@ export function LessonEvaluator({
       absentStudentsSummary: absentSummary
     });
 
-    // 2. Prepare and save associated student assessments (including note and absent flag)
+    // 2. Chuẩn bị và lưu danh sách đánh giá của từng học sinh
     const assessmentList = classStudents.map(s => {
       const isAbsent = absentStudentIds.includes(s.id);
       return {
@@ -279,167 +363,328 @@ export function LessonEvaluator({
 
     onSaveAssessments(newLesson.id, todayDate, assessmentList);
 
-    // Show success & reset
+    // Hiển thị thông báo thành công và quay lại Bước 2 (chọn lớp)
     setNotification(`Đã ghi nhận bài giảng Tuần ${selectedWeek} và toàn bộ đánh giá học sinh thành công!`);
     setTimeout(() => {
       setNotification('');
-      setIsClassSelected(false);
-      setSelectedClassId('');
+      setSelectedClassId(null);
       setLessonName('');
       setLessonContent('');
       setAbsentStudentIds([]);
-    }, 2500);
+    }, 2200);
   };
+
+  // Sắp xếp danh sách khối lớp tự nhiên (Khối 3, Khối 4, Khối 5)
+  const sortedGrades = [...grades].sort((a, b) => a.name.localeCompare(b.name, 'vi', { numeric: true }));
+
+  const currentGrade = grades.find(g => g.id === selectedGradeId);
+  const currentClass = classes.find(c => c.id === selectedClassId);
+  const gradeClasses = selectedGradeId ? classes.filter(c => c.gradeId === selectedGradeId) : [];
 
   return (
     <div id="lesson-eval-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể trải nghiệm toàn bộ quy trình chọn Khối, chọn Lớp, xem bảng tiêu chí và điểm danh. Nút lưu dữ liệu tiết học chính thức đã được khóa.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
       
-      {/* Notifications */}
+      {/* Toast Notification */}
       {notification && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-900/40 dark:text-emerald-300 rounded-xl font-bold text-center flex items-center justify-center gap-2 transition-all shadow-xs">
-          <Sparkles className="w-5 h-5 text-emerald-500 animate-bounce" /> {notification}
+        <div className="p-4 bg-emerald-500 text-white rounded-2xl font-bold text-center flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 animate-fadeIn">
+          <Sparkles className="w-5 h-5 text-amber-300 animate-spin" /> {notification}
         </div>
       )}
 
-      {!isClassSelected ? (
-        // STEP 1: Select Grade then Select Class Screen
-        <div className="space-y-6">
-          <div className="text-left">
-            <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" /> Đánh Giá Tiết Học & Điểm Danh
+      {/* Progress Flow Banner (Quy trình: Bước 1 → Bước 2 → Bước 3) */}
+      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-extrabold text-slate-800 dark:text-slate-100 font-display">
+          <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <span>ĐÁNH GIÁ TIẾT HỌC & ĐIỂM DANH</span>
+        </div>
+
+        {/* Step Indicator Badges */}
+        <div className="flex items-center gap-2 text-xs font-bold">
+          <button
+            type="button"
+            onClick={handleBackToGrades}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all ${
+              selectedGradeId === null
+                ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400 font-black'
+                : 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 hover:bg-blue-100 cursor-pointer'
+            }`}
+          >
+            <span>1️⃣ Bước 1: Chọn Khối</span>
+            {selectedGradeId && <span className="opacity-90">({currentGrade?.name})</span>}
+          </button>
+
+          <ChevronRight className="w-4 h-4 text-slate-300" />
+
+          <button
+            type="button"
+            onClick={selectedGradeId ? handleBackToClasses : undefined}
+            disabled={!selectedGradeId}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all ${
+              selectedGradeId !== null && selectedClassId === null
+                ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-400 font-black'
+                : selectedClassId !== null
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 hover:bg-blue-100 cursor-pointer'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+            }`}
+          >
+            <span>2️⃣ Bước 2: Chọn Lớp</span>
+            {selectedClassId && <span className="opacity-90">(Lớp {currentClass?.name})</span>}
+          </button>
+
+          <ChevronRight className="w-4 h-4 text-slate-300" />
+
+          <span
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 ${
+              selectedClassId !== null
+                ? 'bg-emerald-600 text-white shadow-xs font-black'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+            }`}
+          >
+            <span>3️⃣ Bước 3: Phiếu Đánh Giá</span>
+          </span>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          BƯỚC 1: CHỌN KHỐI LỚP ĐÁNH GIÁ (Render khi selectedGradeId === null)
+          TUYỆT ĐỐI KHÔNG hiển thị danh sách lớp khi chưa chọn khối!
+      ========================================================================= */}
+      {selectedGradeId === null ? (
+        <div className="space-y-6 animate-fadeIn">
+          <div className="text-left space-y-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300">
+              <span>BƯỚC 1 / 3</span>
+            </div>
+            <h2 className="text-2xl font-black text-slate-850 dark:text-slate-100 tracking-tight font-display flex items-center gap-2">
+              <span>BƯỚC 1: CHỌN KHỐI LỚP ĐÁNH GIÁ</span>
             </h2>
-            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Quy trình: <strong>Bước 1: Chọn Khối lớp</strong> → <strong>Bước 2: Chọn Lớp học cần đánh giá</strong>
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400">
+              Vui lòng bấm chọn một khối lớp dưới đây để mở danh sách lớp học tương ứng.
             </p>
           </div>
 
-          {/* BƯỚC 1: CHỌN KHỐI LỚP */}
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>1️⃣</span> Bước 1: Chọn Khối Lớp Đánh Giá:
-                </span>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  (Bấm chọn khối trước để lọc danh sách lớp)
-                </span>
-              </div>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
-                Đang chọn: {grades.find(g => g.id === selectedGradeId)?.name || 'Chưa chọn'}
-              </span>
+          {sortedGrades.length === 0 ? (
+            <div className="p-12 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 text-slate-400">
+              Chưa có dữ liệu Khối lớp. Vui lòng thêm khối lớp trong mục "Quản lý Lớp học & Khối".
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {grades.map(g => {
-                const isSelected = selectedGradeId === g.id;
-                const gradeClasses = classes.filter(c => c.gradeId === g.id);
-                const gradeClassIds = gradeClasses.map(c => c.id);
-                const countStudents = students.filter(s => gradeClassIds.includes(s.classId)).length;
-                const isTech = g.name.includes('5');
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {sortedGrades.map((g) => {
+                const gClasses = classes.filter(c => c.gradeId === g.id);
+                const gClassIds = new Set(gClasses.map(c => c.id));
+                const countStudents = students.filter(s => gClassIds.has(s.classId)).length;
+                const isGrade5 = g.name.includes('5');
+                const isGrade4 = g.name.includes('4');
+                const subjectTitle = isGrade5 ? 'Môn Công nghệ' : 'Môn Tin học';
+                const iconSymbol = isGrade5 ? '🛠️' : '💻';
 
                 return (
-                  <button
+                  <div
                     key={g.id}
-                    type="button"
-                    onClick={() => setSelectedGradeId(g.id)}
-                    className={`px-5 py-3 rounded-2xl text-sm font-bold transition-all cursor-pointer shadow-xs flex items-center gap-3 border ${
-                      isSelected
-                        ? isTech
-                          ? 'bg-amber-500 text-slate-950 font-black shadow-amber-500/25 ring-2 ring-amber-400 border-amber-600 scale-[1.02]'
-                          : 'bg-blue-600 text-white shadow-blue-500/25 ring-2 ring-blue-400 border-blue-600 scale-[1.02]'
-                        : 'bg-slate-50 dark:bg-slate-750 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
-                    }`}
+                    onClick={() => handleSelectGrade(g.id)}
+                    className="relative group cursor-pointer bg-gradient-to-br from-slate-900 via-slate-850 to-blue-950 text-white rounded-3xl p-7 border-2 border-slate-750 hover:border-cyan-400 hover:ring-4 hover:ring-cyan-500/20 shadow-lg hover:shadow-2xl hover:shadow-cyan-500/20 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between min-h-[260px] overflow-hidden"
                   >
-                    <span className="text-xl">{isTech ? '🛠️' : '💻'}</span>
-                    <div className="text-left">
-                      <div className="font-extrabold text-sm">{g.name}</div>
-                      <div className={`text-[11px] font-medium ${isSelected ? (isTech ? 'text-slate-900' : 'text-blue-100') : 'text-slate-500 dark:text-slate-400'}`}>
-                        {isTech ? 'Môn Công nghệ' : 'Môn Tin học'} • {gradeClasses.length} lớp
+                    {/* Background subtle glow */}
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-36 h-36 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all pointer-events-none"></div>
+
+                    <div className="space-y-4">
+                      {/* Top tag & icon row */}
+                      <div className="flex items-center justify-between">
+                        <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
+                          {iconSymbol}
+                        </div>
+                        <span className={`text-[11px] font-extrabold uppercase px-3 py-1 rounded-full tracking-wider border ${
+                          isGrade5 
+                            ? 'bg-amber-950/80 text-amber-300 border-amber-700/60' 
+                            : 'bg-cyan-950/80 text-cyan-300 border-cyan-700/60'
+                        }`}>
+                          {subjectTitle}
+                        </span>
+                      </div>
+
+                      {/* Grade Title */}
+                      <div>
+                        <h3 className="text-2xl lg:text-3xl font-black tracking-tight text-white group-hover:text-cyan-300 transition-colors font-display">
+                          {g.name.toUpperCase()}
+                        </h3>
+                        <p className="text-xs text-slate-300 mt-1 font-medium">
+                          {isGrade5 ? 'Chương trình Công nghệ Tiểu học' : 'Chương trình Tin học Tiểu học'}
+                        </p>
+                      </div>
+
+                      {/* Stats pills */}
+                      <div className="flex items-center gap-2 pt-2">
+                        <span className="px-3 py-1.5 rounded-xl bg-slate-800/90 text-blue-200 border border-blue-500/20 text-xs font-black">
+                          📁 {gClasses.length} lớp
+                        </span>
+                        <span className="px-3 py-1.5 rounded-xl bg-slate-800/90 text-emerald-300 border border-emerald-500/20 text-xs font-black">
+                          👥 {countStudents} HS
+                        </span>
                       </div>
                     </div>
-                    <span className={`ml-2 text-xs px-2.5 py-1 rounded-full font-bold ${
-                      isSelected
-                        ? isTech ? 'bg-black/20 text-slate-950' : 'bg-white/20 text-white'
-                        : 'bg-slate-200 dark:bg-slate-650 text-slate-600 dark:text-slate-300'
-                    }`}>
-                      {countStudents} HS
-                    </span>
+
+                    {/* Bottom action bar */}
+                    <div className="pt-5 mt-4 border-t border-slate-800 flex items-center justify-between text-xs font-bold text-cyan-400 group-hover:text-cyan-200 transition-colors">
+                      <span>Bấm để chọn lớp thuộc {g.name}</span>
+                      <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center group-hover:bg-cyan-500 group-hover:text-slate-950 transition-all">
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : selectedClassId === null ? (
+        /* =========================================================================
+            BƯỚC 2: CHỌN LỚP HỌC THUỘC KHỐI ĐÃ CHỌN (Render khi selectedGradeId có, selectedClassId === null)
+            Chỉ hiển thị các lớp của khối đã chọn, TUYỆT ĐỐI không hiển thị lớp khác!
+        ========================================================================= */
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header Action Bar with Back Button */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleBackToGrades}
+                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-650 text-slate-800 dark:text-slate-100 text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-xs border border-slate-200 dark:border-slate-600"
+              >
+                <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>← Chọn lại khối</span>
+              </button>
+              
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-black bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                  <span>BƯỚC 2 / 3</span>
+                </div>
+                <h2 className="text-xl font-black text-slate-850 dark:text-slate-100 tracking-tight font-display">
+                  CHỌN LỚP HỌC THUỘC {currentGrade?.name?.toUpperCase()}
+                </h2>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+              <span className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                {currentGrade?.name.includes('5') ? '🛠️ Môn Công nghệ' : '💻 Môn Tin học'}
+              </span>
+              <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-extrabold">
+                {gradeClasses.length} lớp học
+              </span>
+            </div>
+          </div>
+
+          {/* Grid of classes in this grade */}
+          {gradeClasses.length === 0 ? (
+            <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 border-dashed text-slate-500 space-y-3">
+              <p className="text-base font-bold">Chưa có lớp nào thuộc {currentGrade?.name}.</p>
+              <p className="text-xs text-slate-400">Thầy Cô vui lòng vào mục "Quản lý Lớp học & Khối" để thêm các lớp học cho khối này.</p>
+              <button
+                type="button"
+                onClick={handleBackToGrades}
+                className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 cursor-pointer"
+              >
+                ← Quay lại chọn khối khác
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4.5">
+              {gradeClasses.map((c) => {
+                const totalClassStudents = students.filter(s => s.classId === c.id).length;
+                const isTech = currentGrade?.name.includes('5') || c.subject === 'Công nghệ';
+
+                return (
+                    <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => handleSelectClass(c.id)}
+                    className="p-5 bg-[#0f2444] hover:bg-[#163a66] text-white rounded-2xl border-2 border-blue-800/90 hover:border-sky-400 hover:shadow-xl text-left transition-all group flex flex-col justify-between h-44 cursor-pointer"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                          isTech 
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                            : 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
+                        }`}>
+                          {isTech ? '🛠️ Công nghệ' : '💻 Tin học'}
+                        </span>
+                        <div className="w-7 h-7 rounded-full bg-blue-900/60 group-hover:bg-blue-600 text-sky-300 group-hover:text-white flex items-center justify-center transition-all border border-blue-700/60">
+                          <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </div>
+
+                      <h3 className="font-black text-white text-2xl group-hover:text-amber-300 transition-colors font-display">
+                        Lớp {c.name}
+                      </h3>
+                      <p className="text-xs text-sky-200/90 mt-1">
+                        Sĩ số: <strong className="text-white font-extrabold">{totalClassStudents}</strong> học sinh
+                      </p>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-blue-800/70 text-xs text-sky-200/80 flex items-center justify-between">
+                      <span className="truncate">GVCN: <span className="font-bold text-white">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
+                      <span className="text-[11px] font-black text-sky-300 group-hover:text-amber-300 transition-colors flex items-center gap-0.5">
+                        Đánh giá →
+                      </span>
+                    </div>
                   </button>
                 );
               })}
             </div>
-          </div>
-
-          {/* BƯỚC 2: CHỌN LỚP HỌC */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <span>2️⃣</span> Bước 2: Chọn Lớp Học Thuộc {grades.find(g => g.id === selectedGradeId)?.name || 'Khối Đã Chọn'}:
-              </label>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                (Bấm vào lớp học để mở phiếu đánh giá)
-              </span>
-            </div>
-
-            {classes.filter(c => c.gradeId === selectedGradeId).length === 0 ? (
-              <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 border-dashed text-slate-400">
-                Chưa có lớp nào thuộc {grades.find(g => g.id === selectedGradeId)?.name || 'khối này'}.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {classes.filter(c => c.gradeId === selectedGradeId).map((c) => {
-                  const totalClassStudents = students.filter(s => s.classId === c.id).length;
-                  const isTech = grades.find(g => g.id === c.gradeId)?.name.includes('5') || c.subject === 'Công nghệ';
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => handleSelectClass(c.id)}
-                      className="p-5 bg-white dark:bg-slate-800 hover:bg-blue-50/50 dark:hover:bg-slate-750 rounded-2xl border border-slate-150 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-md text-left transition-all group flex flex-col justify-between h-40 cursor-pointer"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                            isTech ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
-                          }`}>
-                            {isTech ? '🛠️ Công nghệ' : '💻 Tin học'}
-                          </span>
-                          <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-                        </div>
-                        <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-xl group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                          Lớp {c.name}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Sĩ số: <strong className="text-slate-700 dark:text-slate-300 font-bold">{totalClassStudents}</strong> học sinh</p>
-                      </div>
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                        <span className="truncate">GVCN: <span className="font-semibold text-slate-700 dark:text-slate-300">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       ) : (
-        // STEP 2: Lesson Diary & Student Assessments Grid
-        <form onSubmit={handleSaveAll} className="space-y-6">
+        /* =========================================================================
+            BƯỚC 3: PHIẾU ĐÁNH GIÁ TIẾT HỌC & ĐIỂM DANH (Render khi selectedGradeId & selectedClassId)
+        ========================================================================= */
+        <form onSubmit={handleSaveAll} className="space-y-6 animate-fadeIn">
           
-          {/* Header Action Row */}
-          <div className="flex items-center justify-between gap-4">
-            <button
-              type="button"
-              onClick={() => setIsClassSelected(false)}
-              className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer font-bold"
-            >
-              <ArrowLeft className="w-4 h-4" /> Quay lại chọn lớp ({grades.find(g => g.id === selectedGradeId)?.name || 'Khối'})
-            </button>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-              Đánh giá: Lớp {classes.find(c => c.id === selectedClassId)?.name} ({grades.find(g => g.id === selectedGradeId)?.name || ''})
-            </h2>
+          {/* Header Action Row (Nền xanh đậm chữ trắng cho dễ quan sát) */}
+          <div className="bg-gradient-to-r from-[#0b1e36] via-[#0f2444] to-[#15345a] text-white p-4.5 rounded-2xl border-2 border-sky-400 shadow-md flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={handleBackToClasses}
+                className="px-3.5 py-2 text-xs font-black bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs border border-sky-300"
+              >
+                <ArrowLeft className="w-4 h-4 text-white" />
+                <span>← Chọn lại lớp ({currentGrade?.name})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBackToGrades}
+                className="px-3 py-2 text-xs font-bold text-sky-200 hover:text-white underline cursor-pointer"
+              >
+                Chọn lại khối khác
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs font-bold text-sky-200 hidden sm:inline">Đang đánh giá tiết học:</span>
+              <div className="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white font-black text-sm sm:text-base border-2 border-sky-300 shadow-sm flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>LỚP {currentClass?.name}</span>
+                <span className="text-xs font-normal text-sky-200">({currentGrade?.name})</span>
+              </div>
+            </div>
           </div>
 
-          {/* Lesson Diary Entry - Chọn tuần thay vì ngày & hiển thị rõ ràng */}
+          {/* Section 1: Lesson Diary Entry - Tự động theo PPCT */}
           <div className="bg-slate-900 dark:bg-slate-950 p-5 rounded-2xl border border-slate-800 dark:border-slate-850 shadow-md space-y-4 text-white">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
               <div>
@@ -457,10 +702,10 @@ export function LessonEvaluator({
               <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
                 <span className="px-2.5 py-1 rounded-lg bg-blue-900/60 border border-blue-700/60 text-blue-200 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Lớp {classes.find(c => c.id === selectedClassId)?.name} • {grades.find(g => g.id === selectedGradeId)?.name}
+                  Lớp {currentClass?.name} • {currentGrade?.name}
                 </span>
                 <span className="px-2.5 py-1 rounded-lg bg-amber-950/60 border border-amber-700/60 text-amber-300">
-                  {classes.find(c => c.id === selectedClassId)?.subject || (grades.find(g => g.id === selectedGradeId)?.name.includes('5') ? '🛠️ Công nghệ' : '💻 Tin học')}
+                  {currentClass?.subject || (currentGrade?.name.includes('5') ? '🛠️ Công nghệ' : '💻 Tin học')}
                 </span>
                 <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300">
                   {selectedWeek <= 18 ? 'Học kỳ 1' : 'Học kỳ 2'}
@@ -469,7 +714,7 @@ export function LessonEvaluator({
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-              {/* Nút chọn Tuần & Dropdown tuần (Đã tối ưu gọn gàng, chỉ hiển thị số tuần) */}
+              {/* Chọn Tuần học */}
               <div className="lg:col-span-4 bg-slate-850/80 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-black text-slate-200 uppercase tracking-wider">
@@ -550,7 +795,7 @@ export function LessonEvaluator({
                 </div>
               </div>
 
-              {/* Tên bài giảng / Chủ đề (Tự động cập nhật từ PPCT, hiển thị rõ ràng dễ nhìn) */}
+              {/* Tên bài giảng / Chủ đề */}
               <div className="lg:col-span-8 bg-slate-850/80 p-3.5 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                   <div className="flex items-center gap-2">
@@ -562,12 +807,13 @@ export function LessonEvaluator({
                     </span>
                   </div>
                   
-                  {/* Nút khôi phục theo PPCT nếu người dùng muốn tải lại */}
                   <button
                     type="button"
                     onClick={() => {
-                      const res = resolveLessonName(selectedWeek, selectedClassId);
-                      if (res) setLessonName(res);
+                      if (selectedClassId) {
+                        const res = resolveLessonName(selectedWeek, selectedClassId);
+                        if (res) setLessonName(res);
+                      }
                     }}
                     className="text-[11px] text-blue-300 hover:text-blue-100 flex items-center gap-1 cursor-pointer font-bold transition-all py-0.5 px-2 rounded-md hover:bg-slate-700/60 w-fit"
                     title="Nhấn để tải lại đúng tên bài theo phân phối chương trình"
@@ -607,19 +853,29 @@ export function LessonEvaluator({
             </div>
           </div>
 
-          {/* Student Assessment Roster Grid */}
+          {/* Section 2: Student Assessment Roster Grid with Attendance */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs overflow-hidden space-y-4">
             
             <div className="p-5 border-b border-slate-150 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-emerald-500" /> 2. Đánh giá nhanh kết quả học sinh
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 font-display">
+                  <UserCheck className="w-5 h-5 text-emerald-500" /> 2. Đánh giá nhanh kết quả học sinh & Điểm danh
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">Tích chọn các học sinh cần đánh giá hàng loạt rồi nhấn nút đặt nhanh để tiết kiệm thời gian!</p>
               </div>
 
-              {/* Quick Preset Actions */}
-              <div className="flex gap-2">
+              {/* Quick Preset Actions & Lucky Wheel */}
+              <div className="flex gap-2 flex-wrap items-center">
+                <button
+                  type="button"
+                  onClick={() => setShowWheelInLesson(true)}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 hover:scale-105"
+                  title="Mở vòng quay gọi tên ngẫu nhiên cho lớp này"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-200 animate-spin" />
+                  <span>🎡 Vòng quay gọi tên</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => handleSetDefaultsAll('normal')}
@@ -688,16 +944,18 @@ export function LessonEvaluator({
                   ))}
                   <button
                     type="button"
-                    onClick={() => setAbsentStudentIds([])}
-                    className="text-[11px] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 underline cursor-pointer ml-1 font-medium"
+                    onClick={handleResetAllPresent}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 underline cursor-pointer ml-1 font-bold"
                   >
-                    (Đặt lại cả lớp có mặt)
+                    (Đặt lại đi học đầy đủ)
                   </button>
                 </div>
               ) : (
-                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                  ✓ Toàn bộ học sinh có mặt đầy đủ
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                    ✓ Toàn bộ học sinh có mặt đầy đủ
+                  </span>
+                </div>
               )}
             </div>
 
@@ -724,13 +982,13 @@ export function LessonEvaluator({
                           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                       </th>
-                      <th className="px-5 py-3">Học sinh</th>
-                      <th className="px-4 py-3 text-center w-36 font-black text-rose-600 dark:text-rose-400">ĐIỂM DANH (VẮNG)</th>
-                      <th className="px-5 py-3 text-center min-w-[190px] font-black text-blue-600 dark:text-blue-400">KIẾN THỨC</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Thái độ</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Kỹ năng</th>
-                      <th className="px-5 py-3 text-center min-w-[190px]">Hợp tác</th>
-                      <th className="px-5 py-3 min-w-[240px]">Ghi chú (lưu ý đặc biệt / lý do vắng)</th>
+                      <th className="px-5 py-3 min-w-[240px] whitespace-nowrap font-black text-slate-800 dark:text-slate-200">Họ và tên học sinh</th>
+                      <th className="px-4 py-3 text-center w-36 whitespace-nowrap font-black text-rose-600 dark:text-rose-400">ĐIỂM DANH (VẮNG)</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap font-black text-blue-600 dark:text-blue-400">KIẾN THỨC</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Thái độ</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Kỹ năng</th>
+                      <th className="px-5 py-3 text-center min-w-[190px] whitespace-nowrap">Hợp tác</th>
+                      <th className="px-5 py-3 min-w-[240px] whitespace-nowrap">Ghi chú (lưu ý đặc biệt / lý do vắng)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-sm">
@@ -748,7 +1006,9 @@ export function LessonEvaluator({
                         <tr 
                           key={s.id} 
                           className={`hover:bg-slate-50/50 dark:hover:bg-slate-750/20 transition-all ${
-                            isAbsent 
+                            wheelHighlightedStudentId === s.id
+                              ? 'bg-amber-100/70 dark:bg-amber-950/40 ring-2 ring-amber-400 border-l-4 border-l-amber-500'
+                              : isAbsent 
                               ? 'bg-rose-50/60 dark:bg-rose-950/25 border-l-4 border-l-rose-500' 
                               : isSelected 
                               ? 'bg-blue-50/20 dark:bg-blue-900/10' 
@@ -771,19 +1031,29 @@ export function LessonEvaluator({
                             />
                           </td>
 
-                          {/* Student Info */}
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2">
-                              <p className={`font-semibold transition-colors ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-800 dark:text-slate-100'}`}>
+                          {/* Student Info: Họ và tên học sinh nổi chữ màu đen và trên 1 hàng */}
+                          <td className="px-5 py-3.5 whitespace-nowrap min-w-[240px]">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <span 
+                                className={`text-[15px] font-black tracking-tight whitespace-nowrap transition-colors ${
+                                  isAbsent 
+                                    ? 'line-through text-rose-600 dark:text-rose-400 font-bold' 
+                                    : 'text-black dark:text-white'
+                                }`}
+                              >
                                 {s.name}
-                              </p>
+                              </span>
+                              {s.studentId && (
+                                <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-650 whitespace-nowrap">
+                                  {s.studentId}
+                                </span>
+                              )}
                               {isAbsent && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-xs whitespace-nowrap">
                                   VẮNG
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-400 font-mono mt-0.5">{s.studentId}</p>
                           </td>
 
                           {/* Cột Điểm danh vắng (Chọn nhanh trạng thái vắng) */}
@@ -1028,21 +1298,38 @@ export function LessonEvaluator({
             <div className="flex justify-end gap-3 pt-4">
               <button
                 type="button"
-                onClick={() => setIsClassSelected(false)}
+                onClick={handleBackToClasses}
                 className="px-6 py-3 border border-slate-250 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-sm transition-all cursor-pointer"
               >
                 Hủy bỏ
               </button>
-              <button
-                type="submit"
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
-              </button>
+              {readOnly ? (
+                <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold rounded-xl text-xs flex items-center gap-2">
+                  <span>🔒</span> Đang ở chế độ Chỉ Xem (Không thể lưu tiết học)
+                </div>
+              ) : (
+                <button
+                  type="submit"
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
+                </button>
+              )}
             </div>
           )}
 
         </form>
+      )}
+
+      {/* Lucky Wheel Modal during lesson evaluation */}
+      {showWheelInLesson && (
+        <LuckyWheelModal 
+          isOpen={showWheelInLesson}
+          onClose={() => setShowWheelInLesson(false)}
+          students={classStudents.filter(s => !absentStudentIds.includes(s.id))}
+          className={classes.find(c => c.id === selectedClassId)?.name || ''}
+          onSaveResult={handleWheelResultInLesson}
+        />
       )}
 
     </div>

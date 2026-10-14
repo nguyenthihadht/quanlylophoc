@@ -14,6 +14,7 @@ interface LessonDiariesProps {
   students: Student[];
   assessments: Assessment[];
   timeline: TimelineWeek[];
+  readOnly?: boolean;
   onDeleteLesson: (id: string) => void;
   onUpdateLesson: (id: string, name: string, content: string, date: string) => void;
 }
@@ -25,6 +26,7 @@ export function LessonDiaries({
   students,
   assessments,
   timeline,
+  readOnly = false,
   onDeleteLesson,
   onUpdateLesson
  }: LessonDiariesProps) {
@@ -84,6 +86,20 @@ export function LessonDiaries({
   return (
     <div id="lesson-diaries-container" className="space-y-6">
 
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể xem toàn bộ sổ nhật ký giảng dạy, danh sách học sinh vắng từng tiết và in sổ bài dạy. Chức năng sửa hoặc xóa tiết học đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
       {!selectedLessonId ? (
         // LIST VIEW
         <div className="space-y-4">
@@ -120,8 +136,8 @@ export function LessonDiaries({
                   <div key={lesson.id} className="p-5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 dark:border-slate-700/80 shadow-xs flex flex-col justify-between transition-all hover:shadow-xs">
                     <div>
                       <div className="flex justify-between items-start">
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                          Lớp {targetClass?.name} ({targetGrade?.name})
+                        <span className="px-3 py-1 rounded-xl text-xs font-black bg-[#0f2444] text-white border border-sky-400/80 shadow-xs flex items-center gap-1.5">
+                          <span>🏫</span> Lớp {targetClass?.name} ({targetGrade?.name})
                         </span>
                         <span className="text-xs text-slate-400 font-mono flex items-center gap-1.5 flex-wrap justify-end">
                           <Calendar className="w-3.5 h-3.5 text-blue-500" /> {lesson.date}
@@ -166,24 +182,28 @@ export function LessonDiaries({
                       </span>
 
                       <div className="flex gap-2">
-                        <button
-                          onClick={() => handleOpenEdit(lesson)}
-                          className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg transition-all cursor-pointer"
-                          title="Sửa thông tin nhật ký"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm('Bạn có chắc chắn muốn xóa nhật ký bài giảng này? Toàn bộ đánh giá học sinh kèm theo cũng bị xóa.')) {
-                              onDeleteLesson(lesson.id);
-                            }
-                          }}
-                          className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 rounded-lg transition-all cursor-pointer"
-                          title="Xóa nhật ký"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(lesson)}
+                              className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 rounded-lg transition-all cursor-pointer"
+                              title="Sửa thông tin nhật ký"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('Bạn có chắc chắn muốn xóa nhật ký bài giảng này? Toàn bộ đánh giá học sinh kèm theo cũng bị xóa.')) {
+                                  onDeleteLesson(lesson.id);
+                                }
+                              }}
+                              className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 rounded-lg transition-all cursor-pointer"
+                              title="Xóa nhật ký"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => setSelectedLessonId(lesson.id)}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer"
@@ -221,9 +241,9 @@ export function LessonDiaries({
 
           {/* Lesson Summary Info Block */}
           <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
-                Lớp {lessonClass?.name}
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-[#0f2444] text-white border-2 border-sky-400 shadow-sm flex items-center gap-1.5">
+                <span>🎯</span> Lớp {lessonClass?.name}
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300">
                 {lessonGrade?.name}
@@ -300,13 +320,13 @@ export function LessonDiaries({
                             {student?.studentId || 'Chưa rõ'}
                           </span>
                         </td>
-                        <td className="px-5 py-3 font-semibold">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`font-extrabold text-sm ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-50'}`}>
+                        <td className="px-5 py-3 font-semibold whitespace-nowrap min-w-[200px]">
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span className={`font-black text-[15px] whitespace-nowrap tracking-tight ${isAbsent ? 'line-through text-rose-600 dark:text-rose-400' : 'text-black dark:text-white'}`}>
                               {student?.name || 'Không có tên'}
                             </span>
                             {isAbsent && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white shadow-xs">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-rose-500 text-white shadow-xs whitespace-nowrap">
                                 VẮNG
                               </span>
                             )}

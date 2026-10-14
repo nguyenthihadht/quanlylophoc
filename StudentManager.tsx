@@ -4,13 +4,14 @@
  */
 
 import React, { useState } from 'react';
-import { Search, Plus, Edit2, Trash2, Download, Upload, Eye, FileSpreadsheet, Info, Check, AlertCircle } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Download, Upload, Eye, FileSpreadsheet, Info, Check, AlertCircle, Users } from 'lucide-react';
 import { Class, Student, Grade } from '../types';
 
 interface StudentManagerProps {
   classes: Class[];
   grades: Grade[];
   students: Student[];
+  readOnly?: boolean;
   onAddStudent: (student: Omit<Student, 'id'>) => void;
   onUpdateStudent: (id: string, fields: Partial<Omit<Student, 'id'>>) => void;
   onDeleteStudent: (id: string) => void;
@@ -21,6 +22,7 @@ export function StudentManager({
   classes,
   grades,
   students,
+  readOnly = false,
   onAddStudent,
   onUpdateStudent,
   onDeleteStudent,
@@ -204,20 +206,33 @@ export function StudentManager({
 
   return (
     <div id="student-manager-container" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể tra cứu, lọc danh sách học sinh theo khối/lớp và xuất file Excel. Chức năng Thêm, Sửa, Xóa và Nhập danh sách đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
       
       {/* 1. NÚT CHỌN KHỐI LỚP (GRADE SELECTOR BAR) */}
-      <div id="students-grade-bar" className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs space-y-3.5">
+      <div id="students-grade-bar" className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-750 shadow-sm space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
               <span>🏫</span> Nút Chọn Khối Lớp:
             </span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] text-blue-200">
               (Bấm chọn khối để xem danh sách lớp và học sinh tương ứng)
             </span>
           </div>
-          <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-            Đang hiển thị: <strong className="text-blue-600 dark:text-blue-400 font-bold">{filteredStudents.length}</strong> học sinh
+          <span className="text-xs font-semibold text-slate-300">
+            Đang hiển thị: <strong className="text-sky-300 font-extrabold">{filteredStudents.length}</strong> học sinh
           </span>
         </div>
 
@@ -244,17 +259,17 @@ export function StudentManager({
                 className={`px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all cursor-pointer shadow-xs flex items-center gap-2 border ${
                   isSelected
                     ? isTech
-                      ? 'bg-amber-500 text-slate-950 font-black shadow-amber-500/20 ring-2 ring-amber-400 border-amber-500'
-                      : 'bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-400 border-blue-500'
-                    : 'bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow-amber-500/20 ring-2 ring-amber-300 border-amber-400 scale-[1.02]'
+                      : 'bg-blue-600 text-white font-black shadow-blue-500/30 ring-2 ring-sky-300 border-sky-400 scale-[1.02]'
+                    : 'bg-[#0f2444] hover:bg-[#163a66] text-white font-extrabold border-blue-900/80 hover:border-blue-700'
                 }`}
               >
                 <span>{isTech ? '🛠️' : '💻'}</span>
                 <span>{g.name}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                   isSelected 
-                    ? isTech ? 'bg-black/20 text-slate-950' : 'bg-white/20 text-white' 
-                    : 'bg-slate-200 dark:bg-slate-650 text-slate-600 dark:text-slate-300'
+                    ? isTech ? 'bg-black/20 text-slate-950 font-black' : 'bg-white/25 text-white font-black' 
+                    : 'bg-blue-950/80 text-blue-100 border border-blue-700/60'
                 }`}>
                   {gradeClasses.length} lớp • {countStudents} HS
                 </span>
@@ -265,10 +280,10 @@ export function StudentManager({
           <button
             type="button"
             onClick={() => { setSelectedGradeId(''); setSelectedClassId(''); setCurrentPage(1); }}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5 border ml-auto ${
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5 border ml-auto ${
               selectedGradeId === ''
-                ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 border-slate-800'
-                : 'bg-slate-100 dark:bg-slate-750 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                ? 'bg-blue-600 text-white font-black ring-2 ring-sky-300 border-sky-400 shadow-md scale-[1.02]'
+                : 'bg-[#0f2444] hover:bg-[#163a66] text-white font-extrabold border-blue-900/80 hover:border-blue-700'
             }`}
           >
             <span>🌐</span> Tất cả Khối ({students.length} HS)
@@ -277,8 +292,8 @@ export function StudentManager({
 
         {/* Quick Class Pills for the selected Grade */}
         {selectedGradeId && (
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center gap-2 animate-fadeIn">
-            <span className="text-xs font-black text-slate-700 dark:text-slate-300 flex items-center gap-1.5 mr-1">
+          <div className="pt-3 border-t border-slate-700/80 flex flex-wrap items-center gap-2 animate-fadeIn">
+            <span className="text-xs font-black text-white flex items-center gap-1.5 mr-1">
               <span>↳</span> Danh sách lớp {grades.find(g => g.id === selectedGradeId)?.name}:
             </span>
             <button
@@ -286,8 +301,8 @@ export function StudentManager({
               onClick={() => { setSelectedClassId(''); setCurrentPage(1); }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all border flex items-center gap-1.5 ${
                 selectedClassId === ''
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-400/40'
-                  : 'bg-white dark:bg-slate-750 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-250 dark:border-slate-650'
+                  ? 'bg-blue-600 text-white font-black border-sky-400 shadow-sm ring-2 ring-sky-300'
+                  : 'bg-[#0f2444] hover:bg-[#163a66] text-white font-extrabold border-blue-900/80 hover:border-blue-700'
               }`}
             >
               <span>👁️</span> Hiển thị toàn bộ {grades.find(g => g.id === selectedGradeId)?.name} ({students.filter(s => classes.filter(c => c.gradeId === selectedGradeId).map(c => c.id).includes(s.classId)).length} HS)
@@ -302,13 +317,13 @@ export function StudentManager({
                   onClick={() => { setSelectedClassId(c.id); setCurrentPage(1); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 border ${
                     isClsSelected
-                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs border-slate-900 dark:border-white'
-                      : 'bg-slate-50 dark:bg-slate-750 text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-650'
+                      ? 'bg-blue-600 text-white font-black shadow-sm ring-2 ring-sky-300 border-sky-400 scale-[1.02]'
+                      : 'bg-[#0f2444] hover:bg-[#163a66] text-white font-bold border-blue-900/80 hover:border-blue-700'
                   }`}
                 >
                   <span>Lớp {c.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                    isClsSelected ? 'bg-white/20 text-white dark:bg-black/20 dark:text-slate-900' : 'bg-slate-200 dark:bg-slate-650 text-slate-600 dark:text-slate-300'
+                    isClsSelected ? 'bg-white/25 text-white' : 'bg-blue-950/80 text-blue-100 border border-blue-700/60'
                   }`}>
                     {clsStudentsCount} HS
                   </span>
@@ -318,6 +333,45 @@ export function StudentManager({
           </div>
         )}
       </div>
+
+      {/* Prominent Selected Class Status Banner */}
+      {selectedClassId ? (
+        <div className="p-4 bg-gradient-to-r from-[#0b1e36] via-[#0f2444] to-[#15345a] text-white rounded-2xl border-2 border-sky-400 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <span className="w-12 h-12 rounded-xl bg-blue-600 border-2 border-sky-300 text-white flex items-center justify-center text-2xl shadow-sm shrink-0">
+              🎯
+            </span>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50">
+                  LỚP ĐANG CHỌN QUẢN LÝ
+                </span>
+                <span className="text-xs text-sky-200 font-bold">
+                  {grades.find(g => g.id === classes.find(c => c.id === selectedClassId)?.gradeId)?.name}
+                </span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-amber-300 font-display flex items-center gap-2 flex-wrap">
+                <span>LỚP {classes.find(c => c.id === selectedClassId)?.name}</span>
+                <span className="text-xs font-bold text-white bg-white/15 px-3 py-1 rounded-xl border border-white/20">
+                  Sĩ số: {students.filter(s => s.classId === selectedClassId).length} Học sinh
+                </span>
+                {classes.find(c => c.id === selectedClassId)?.homeroomTeacher && (
+                  <span className="text-xs font-semibold text-slate-300">
+                    · GVCN: <strong className="text-white">{classes.find(c => c.id === selectedClassId)?.homeroomTeacher}</strong>
+                  </span>
+                )}
+              </h3>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setSelectedClassId(''); setCurrentPage(1); }}
+            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/25 cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+          >
+            <span>✕</span> Bỏ chọn lớp (Xem tất cả)
+          </button>
+        </div>
+      ) : null}
 
       {/* Search and Filters Bar */}
       <div id="students-filter-bar" className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -336,7 +390,7 @@ export function StudentManager({
             />
           </div>
 
-          {/* Class Filter */}
+          {/* Class Filter (Nền xanh đậm chữ trắng) */}
           <select
             value={selectedClassId}
             onChange={(e) => { 
@@ -350,25 +404,25 @@ export function StudentManager({
               }
               setCurrentPage(1); 
             }}
-            className="px-3 py-2 text-sm rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs"
+            className="px-3.5 py-2 text-sm font-black rounded-xl border-2 border-blue-900 bg-[#0f2444] text-white outline-none focus:ring-2 focus:ring-sky-400 shadow-sm cursor-pointer"
           >
-            <option value="">
+            <option value="" className="bg-[#0f2444] text-white font-bold py-1">
               {selectedGradeId 
                 ? `Tất cả lớp của ${grades.find(g => g.id === selectedGradeId)?.name}` 
                 : 'Tất cả Lớp học'}
             </option>
             {selectedGradeId ? (
               classes.filter(c => c.gradeId === selectedGradeId).map(c => (
-                <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                <option key={c.id} value={c.id} className="bg-[#0f2444] text-white font-bold py-1">Lớp {c.name}</option>
               ))
             ) : (
               grades.map(g => {
                 const gradeClasses = classes.filter(c => c.gradeId === g.id);
                 if (gradeClasses.length === 0) return null;
                 return (
-                  <optgroup key={g.id} label={g.name}>
+                  <optgroup key={g.id} label={g.name} className="bg-[#0b1e36] text-sky-300 font-black">
                     {gradeClasses.map(c => (
-                      <option key={c.id} value={c.id}>Lớp {c.name}</option>
+                      <option key={c.id} value={c.id} className="bg-[#0f2444] text-white font-bold py-1">Lớp {c.name}</option>
                     ))}
                   </optgroup>
                 );
@@ -390,29 +444,33 @@ export function StudentManager({
 
         {/* Right Action buttons */}
         <div className="flex gap-2 w-full sm:w-auto shrink-0 justify-end">
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Upload className="w-4 h-4" /> Nhập Excel / CSV
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" /> Nhập Excel / CSV
+            </button>
+          )}
           <button
             onClick={handleCSVExport}
             className="px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-4 h-4" /> Xuất Excel
           </button>
-          <button
-            onClick={handleOpenAdd}
-            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Thêm học sinh
-          </button>
+          {!readOnly && (
+            <button
+              onClick={handleOpenAdd}
+              className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Thêm học sinh
+            </button>
+          )}
         </div>
       </div>
 
       {/* Bulk Action Bar */}
-      {selectedIds.length > 0 && (
+      {!readOnly && selectedIds.length > 0 && (
         <div id="bulk-action-bar" className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/60 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200 shadow-xs">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
@@ -451,6 +509,28 @@ export function StudentManager({
 
       {/* Main Table Panel */}
       <div id="students-table-panel" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs overflow-hidden">
+        {/* Table Title Bar */}
+        <div className="px-6 py-3.5 bg-slate-50/80 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Users className="w-4 h-4 text-blue-600" />
+            <span className="font-extrabold text-sm text-slate-800 dark:text-slate-100">
+              {selectedClassId 
+                ? `Danh Sách Học Sinh — Lớp ${classes.find(c => c.id === selectedClassId)?.name}`
+                : selectedGradeId
+                  ? `Danh Sách Học Sinh — ${grades.find(g => g.id === selectedGradeId)?.name}`
+                  : 'Danh Sách Học Sinh — Toàn trường'}
+            </span>
+            {selectedClassId && (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-[#0f2444] text-white border border-sky-400 shadow-2xs">
+                Lớp {classes.find(c => c.id === selectedClassId)?.name}
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Hiển thị <strong className="text-blue-600 dark:text-blue-400 font-bold">{paginatedStudents.length}</strong> / {filteredStudents.length} học sinh
+          </span>
+        </div>
+
         {filteredStudents.length === 0 ? (
           <div className="text-center py-16 text-slate-400 dark:text-slate-500 space-y-3">
             <p className="text-lg font-medium">Không tìm thấy học sinh nào</p>
@@ -530,18 +610,28 @@ export function StudentManager({
                         {s.note || '-'}
                       </td>
                       <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleOpenEdit(s)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setStudentToDelete(s)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {readOnly ? (
+                          <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-750 px-2 py-0.5 rounded-md">
+                            Chỉ xem
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(s)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Sửa học sinh"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setStudentToDelete(s)}
+                              className="p-1.5 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Xóa học sinh"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );

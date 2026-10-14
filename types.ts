@@ -98,6 +98,20 @@ export interface AppSettings {
   requirePassword?: boolean;
 }
 
+export interface WheelSpinRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  timestamp: string; // e.g. "12:30"
+  date: string; // YYYY-MM-DD
+  stars: 1 | 2 | 3;
+  ratingText: string;
+  note: string;
+  lessonId?: string;
+}
+
 export interface SystemBackup {
   schoolYears: SchoolYear[];
   grades: Grade[];
@@ -108,6 +122,7 @@ export interface SystemBackup {
   comments: Comment[];
   scores?: SemesterScore[];
   timeline?: TimelineWeek[];
+  wheelRecords?: WheelSpinRecord[];
   settings: AppSettings;
   backupDate: string;
 }

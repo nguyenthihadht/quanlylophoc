@@ -147,6 +147,7 @@ interface TimelineManagerProps {
   classes: Class[];
   grades: Grade[];
   students: Student[];
+  readOnly?: boolean;
   onSaveTimeline: (timeline: TimelineWeek[]) => void;
 }
 
@@ -164,6 +165,7 @@ export default function TimelineManager({
   classes, 
   grades, 
   students, 
+  readOnly = false,
   onSaveTimeline 
 }: TimelineManagerProps) {
   // Active selected grade: default to Grade 3, or first grade in list
@@ -1150,6 +1152,20 @@ export default function TimelineManager({
 
   return (
     <div id="timeline_manager_panel" className="space-y-6">
+      {/* Read-Only Notice Banner */}
+      {readOnly && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">👁️</span>
+            <div>
+              <p className="font-bold">Chế độ Xem tham khảo (Chỉ xem) dành cho Đồng nghiệp</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">Thầy/Cô có thể tra cứu toàn bộ 35 tuần bài giảng phân phối chương trình, lọc theo học kỳ và xuất file Excel mẫu. Các chức năng lưu và chỉnh sửa bài giảng đã được bảo vệ.</p>
+            </div>
+          </div>
+          <span className="shrink-0 px-2.5 py-1 bg-amber-200/60 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg font-bold text-[10px] uppercase tracking-wider">Chỉ xem</span>
+        </div>
+      )}
+
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-750 text-white p-6 rounded-2xl shadow-sm border border-blue-500/30">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
@@ -1247,21 +1263,25 @@ export default function TimelineManager({
             </div>
 
             {/* Manual 35-Week Input Button */}
-            <button
-              onClick={openManualModal}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs md:text-sm rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer border border-emerald-300"
-              title="Nhập thủ công phân phối chương trình 35 tuần với chữ trắng nền tối"
-            >
-              <Edit3 className="w-4 h-4 text-slate-950" /> Nhập thủ công 35 tuần
-            </button>
+            {!readOnly && (
+              <button
+                onClick={openManualModal}
+                className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs md:text-sm rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer border border-emerald-300"
+                title="Nhập thủ công phân phối chương trình 35 tuần với chữ trắng nền tối"
+              >
+                <Edit3 className="w-4 h-4 text-slate-950" /> Nhập thủ công 35 tuần
+              </button>
+            )}
 
             {/* Upload Button */}
-            <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-4 py-2.5 bg-white text-blue-700 hover:bg-blue-50 font-bold text-xs md:text-sm rounded-xl transition-all shadow-sm flex items-center gap-2 cursor-pointer"
-            >
-              <Upload className="w-4 h-4" /> Import file lên (CSV)
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setIsUploadModalOpen(true)}
+                className="px-4 py-2.5 bg-white text-blue-700 hover:bg-blue-50 font-bold text-xs md:text-sm rounded-xl transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+              >
+                <Upload className="w-4 h-4" /> Import file lên (CSV)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1321,7 +1341,7 @@ export default function TimelineManager({
                       ? gSubject === 'Công nghệ'
                         ? 'bg-amber-500 text-slate-950 font-black border-amber-600 ring-2 ring-amber-400 shadow-md scale-[1.01]'
                         : 'bg-blue-600 text-white font-black border-blue-700 ring-2 ring-blue-400 shadow-md scale-[1.01]'
-                      : 'bg-slate-50 dark:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-650 hover:bg-blue-50/60 dark:hover:bg-slate-700'
+                      : 'bg-[#0f2444] text-white border-blue-900/80 hover:bg-[#163a66]'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
@@ -1333,15 +1353,15 @@ export default function TimelineManager({
                       isSelected
                         ? 'bg-black/20 text-inherit'
                         : gSubject === 'Công nghệ'
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
-                          : 'bg-blue-100 text-blue-900 dark:bg-blue-950/60 dark:text-blue-300'
+                          ? 'bg-amber-900/60 text-amber-200 border border-amber-700/60'
+                          : 'bg-blue-900/60 text-blue-200 border border-blue-700/60'
                     }`}>
                       {gSubject}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-black/10 dark:border-white/10 text-xs">
-                    <span className={`text-[11px] ${isSelected ? 'opacity-90' : 'text-slate-500 dark:text-slate-400'}`}>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/10 text-xs">
+                    <span className={`text-[11px] ${isSelected ? 'opacity-90' : 'text-slate-300'}`}>
                       {gClasses.length} lớp ({gClasses.map(c => c.name).join(', ') || 'Chưa có lớp'})
                     </span>
                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
@@ -1521,12 +1541,14 @@ export default function TimelineManager({
               />
             </div>
 
-            <button
-              onClick={() => setIsAddFormOpen(!isAddFormOpen)}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" /> Thêm tuần
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setIsAddFormOpen(!isAddFormOpen)}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> Thêm tuần
+              </button>
+            )}
           </div>
         </div>
 
@@ -1747,26 +1769,32 @@ export default function TimelineManager({
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <div className="flex justify-end gap-1">
-                          <button
-                            onClick={() => startEditing(w)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                            title="Sửa tuần này"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`Xóa ${w.week}?`)) {
-                                handleDeleteWeek(w.id);
-                              }
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
-                            title="Xóa tuần này"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {readOnly ? (
+                          <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-750 px-2 py-0.5 rounded-md">
+                            Chỉ xem
+                          </span>
+                        ) : (
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={() => startEditing(w)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Sửa tuần này"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Xóa ${w.week}?`)) {
+                                  handleDeleteWeek(w.id);
+                                }
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all cursor-pointer"
+                              title="Xóa tuần này"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

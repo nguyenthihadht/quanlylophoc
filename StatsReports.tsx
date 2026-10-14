@@ -131,18 +131,29 @@ Cả lớp nhìn chung có thái độ học tập nghiêm túc, tích cực th�
     <div id="stats-reports-container" className="space-y-6">
       
       {/* Filters Bar */}
-      <div id="stats-filter-bar" className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 shadow-md flex flex-col sm:flex-row gap-4 items-center justify-between no-print">
+      <div id="stats-filter-bar" className="bg-[#0b1e36] text-white p-4 rounded-2xl border-2 border-blue-900 shadow-md flex flex-col sm:flex-row gap-4 items-center justify-between no-print">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <select
             value={selectedClassId}
             onChange={(e) => setSelectedClassId(e.target.value)}
-            className="px-4 py-2.5 text-sm rounded-xl border border-slate-700 bg-slate-800 text-white outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-4 py-2.5 text-sm font-black rounded-xl border-2 border-blue-800 bg-[#0f2444] text-white outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-sm min-w-[220px]"
           >
-            <option value="">-- Toàn bộ các Lớp --</option>
-            {classes.map(c => {
-              const grade = grades.find(g => g.id === c.gradeId);
+            <option value="" className="bg-[#0f2444] text-white font-bold py-1.5">
+              -- Toàn bộ các Lớp --
+            </option>
+            {grades.map(g => {
+              const gradeClasses = classes
+                .filter(c => c.gradeId === g.id)
+                .sort((a, b) => a.name.localeCompare(b.name, 'vi', { numeric: true }));
+              if (gradeClasses.length === 0) return null;
               return (
-                <option key={c.id} value={c.id} className="text-slate-900">Lớp {c.name} ({grade?.name})</option>
+                <optgroup key={g.id} label={`--- ${g.name} ---`} className="bg-[#0b1e36] text-sky-300 font-black">
+                  {gradeClasses.map(c => (
+                    <option key={c.id} value={c.id} className="bg-[#0f2444] text-white font-bold py-1.5">
+                      Lớp {c.name} ({g.name})
+                    </option>
+                  ))}
+                </optgroup>
               );
             })}
           </select>
@@ -150,11 +161,11 @@ Cả lớp nhìn chung có thái độ học tập nghiêm túc, tích cực th�
           <select
             value={selectedSemester}
             onChange={(e) => setSelectedSemester(e.target.value)}
-            className="px-4 py-2.5 text-sm rounded-xl border border-slate-700 bg-slate-800 text-white outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="px-4 py-2.5 text-sm font-black rounded-xl border-2 border-blue-800 bg-[#0f2444] text-white outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer shadow-sm"
           >
-            <option value="Học kỳ I" className="text-slate-900">Học kỳ I</option>
-            <option value="Học kỳ II" className="text-slate-900">Học kỳ II</option>
-            <option value="Cả năm" className="text-slate-900">Cả năm học</option>
+            <option value="Học kỳ I" className="bg-[#0f2444] text-white font-bold py-1.5">Học kỳ I</option>
+            <option value="Học kỳ II" className="bg-[#0f2444] text-white font-bold py-1.5">Học kỳ II</option>
+            <option value="Cả năm" className="bg-[#0f2444] text-white font-bold py-1.5">Cả năm học</option>
           </select>
         </div>
 
@@ -182,6 +193,40 @@ Cả lớp nhìn chung có thái độ học tập nghiêm túc, tích cực th�
           </button>
         </div>
       </div>
+
+      {/* Prominent Selected Class Status Banner */}
+      {selectedClassId && targetClass && (
+        <div className="p-4 bg-gradient-to-r from-[#0b1e36] via-[#0f2444] to-[#15345a] text-white rounded-2xl border-2 border-sky-400 shadow-md flex flex-wrap items-center justify-between gap-3 no-print animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <span className="w-11 h-11 rounded-xl bg-blue-600 border-2 border-sky-300 text-white flex items-center justify-center font-black text-xl shrink-0">
+              📊
+            </span>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/25 text-sky-200 border border-sky-400/50">
+                  Lớp Đang Xem Thống Kê
+                </span>
+                <span className="text-xs text-sky-200 font-bold">
+                  {grades.find(g => g.id === targetClass.gradeId)?.name}
+                </span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-amber-300 font-display flex items-center gap-2">
+                <span>LỚP {targetClass.name}</span>
+                <span className="text-xs font-bold text-white bg-white/15 px-2.5 py-0.5 rounded-lg border border-white/20">
+                  Sĩ số: {classStudents.length} Học sinh
+                </span>
+              </h3>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedClassId('')}
+            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/25 cursor-pointer flex items-center gap-1.5"
+          >
+            <span>✕</span> Xem toàn bộ các lớp
+          </button>
+        </div>
+      )}
 
       {/* Main dashboard printable panel */}
       <div id="printable-report-card" className="bg-slate-900 text-slate-150 p-6 rounded-2xl border border-slate-800 shadow-md space-y-6 print:bg-white print:text-black print:border-none print:shadow-none">
