@@ -963,9 +963,17 @@ export default function App() {
           )}
 
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 ${isReadOnly ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-slate-700 dark:text-blue-300'} font-extrabold text-sm rounded-lg flex items-center justify-center uppercase`}>
-              {isReadOnly ? 'ĐN' : (settings?.teacherName?.slice(-2) || 'GV')}
-            </div>
+            {!isReadOnly && settings?.teacherPhoto ? (
+              <img 
+                src={settings.teacherPhoto} 
+                alt="Ảnh cô giáo" 
+                className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-650 shadow-2xs shrink-0" 
+              />
+            ) : (
+              <div className={`w-9 h-9 ${isReadOnly ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-slate-700 dark:text-blue-300'} font-extrabold text-sm rounded-lg flex items-center justify-center uppercase shrink-0`}>
+                {isReadOnly ? 'ĐN' : (settings?.teacherName?.slice(-2) || 'GV')}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="font-bold text-xs truncate text-slate-800 dark:text-slate-200">
                 {isReadOnly ? viewerName : settings?.teacherName}
@@ -1075,6 +1083,8 @@ export default function App() {
               lessons={lessons}
               assessments={assessments}
               readOnly={isReadOnly}
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
               onNavigate={(tab) => {
                 setActiveTab(tab as Tab);
                 if (tab === 'assess') {

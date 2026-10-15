@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Save, Download, Upload, Check, RefreshCw, Star, Info, Moon, Sun, 
   AlertTriangle, Database, Cloud, Eye, EyeOff, KeyRound, Lock, ShieldCheck, 
-  AlertCircle, X, RotateCcw 
+  AlertCircle, X, RotateCcw, Camera, Trash2, Image as ImageIcon 
 } from 'lucide-react';
 import { AppSettings } from '../types';
 import { ClassTrackerAPI } from '../lib/api';
@@ -31,6 +31,7 @@ export function BackupSettings({
   const [teacherName, setTeacherName] = useState(settings.teacherName);
   const [adminPassword, setAdminPassword] = useState(settings.adminPassword || '123456');
   const [requirePassword, setRequirePassword] = useState(settings.requirePassword !== false);
+  const [teacherPhoto, setTeacherPhoto] = useState(settings.teacherPhoto || '');
   const [showAdminPass, setShowAdminPass] = useState(false);
   
   const [isSaved, setIsSaved] = useState(false);
@@ -53,6 +54,7 @@ export function BackupSettings({
     setTeacherName(settings.teacherName);
     setAdminPassword(settings.adminPassword || '123456');
     setRequirePassword(settings.requirePassword !== false);
+    setTeacherPhoto(settings.teacherPhoto || '');
   }, [settings]);
 
   const handleChangePassword = (e: React.FormEvent) => {
@@ -113,6 +115,53 @@ export function BackupSettings({
     }
   };
 
+  const handlePhotoUploadInSettings = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chọn file hình ảnh hợp lệ (JPG, PNG, WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 900;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          setTeacherPhoto(dataUrl);
+          onUpdateSettings({ teacherPhoto: dataUrl });
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly) return;
@@ -120,7 +169,8 @@ export function BackupSettings({
       schoolName: schoolName.trim(),
       teacherName: teacherName.trim(),
       adminPassword: adminPassword.trim(),
-      requirePassword: requirePassword
+      requirePassword: requirePassword,
+      teacherPhoto: teacherPhoto
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
@@ -252,6 +302,57 @@ export function BackupSettings({
               className="w-full px-4 py-2.5 rounded-xl border border-slate-350 dark:border-slate-650 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium text-sm focus:ring-2 focus:ring-blue-500/20 transition-all outline-none shadow-xs"
               required
             />
+          </div>
+
+          {/* Teacher and Students Photo Section */}
+          <div className="pt-2 pb-1 space-y-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-450 uppercase mb-1">
+              Hình ảnh Giáo viên & Các học sinh (Banner & Hồ sơ)
+            </label>
+            <div className="flex flex-col sm:flex-row items-center gap-3.5 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="w-24 h-20 rounded-xl overflow-hidden border-2 border-white dark:border-slate-700 bg-slate-200 dark:bg-slate-800 shrink-0 flex items-center justify-center shadow-xs">
+                {teacherPhoto ? (
+                  <img src={teacherPhoto} alt="Ảnh cô trò" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="text-center p-1 text-slate-400">
+                    <span className="text-2xl">👩‍🏫</span>
+                    <span className="block text-[9px] font-bold mt-0.5 text-slate-500">Mặc định</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 space-y-2 text-center sm:text-left">
+                <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                  {teacherPhoto 
+                    ? '✨ Đang hiển thị ảnh chụp Cô giáo và các em học sinh trên Banner Trang chủ.' 
+                    : '🎨 Đang hiển thị tranh minh họa lớp Tin học vui tươi mặc định.'}
+                </p>
+                {!readOnly && (
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <label className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-all inline-flex items-center gap-1.5 shadow-xs">
+                      <Camera className="w-3.5 h-3.5" /> Tải ảnh lên (hình.jpg)
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={handlePhotoUploadInSettings}
+                      />
+                    </label>
+                    {teacherPhoto && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTeacherPhoto('');
+                          onUpdateSettings({ teacherPhoto: '' });
+                        }}
+                        className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Về mặc định
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Security & Password Change Section */}

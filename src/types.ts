@@ -99,6 +99,7 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   adminPassword?: string;
   requirePassword?: boolean;
+  teacherPhoto?: string; // URL hoặc chuỗi Base64 ảnh cô giáo và học sinh
 }
 
 export interface WheelSpinRecord {
