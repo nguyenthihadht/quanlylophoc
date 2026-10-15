@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek, WheelSpinRecord } from '../types';
+import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek, WheelSpinRecord, EvaluationLevel } from '../types';
 import { loadStateFromFirestore, saveStateToFirestore } from './firebase';
 
 function generateUniqueId(prefix: string): string {
@@ -401,7 +401,8 @@ export class ClassTrackerAPI {
     studentId: string, 
     content: string, 
     type: 'AI' | 'Thủ công',
-    period?: 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II' | string
+    period?: 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II' | string,
+    level?: EvaluationLevel
   ): Comment {
     if (!this.cache.comments) {
       this.cache.comments = [];
@@ -419,10 +420,11 @@ export class ClassTrackerAPI {
       if (existingIndex > -1) {
         this.cache.comments[existingIndex] = {
           ...this.cache.comments[existingIndex],
-          content,
+          content: content !== undefined ? content : this.cache.comments[existingIndex].content,
           type,
           createdBy,
-          date
+          date,
+          level: level !== undefined ? level : this.cache.comments[existingIndex].level
         };
         this.persist();
         return this.cache.comments[existingIndex];
@@ -436,7 +438,8 @@ export class ClassTrackerAPI {
       createdBy,
       date,
       type,
-      period
+      period,
+      level
     };
     this.cache.comments = [...this.getComments(), newComment];
     this.persist();
@@ -810,7 +813,7 @@ export class ClassTrackerAPI {
   }
 
   // AI Integration
-  public static async generateAIComment(studentId: string, period?: string): Promise<string> {
+  public static async generateAIComment(studentId: string, period?: string, level?: EvaluationLevel): Promise<string> {
     const student = this.getStudents().find(s => s.id === studentId);
     if (!student) throw new Error('Student not found');
 
@@ -872,7 +875,8 @@ export class ClassTrackerAPI {
           notes: student.note,
           currentTimelineWeek: this.getTimelineForDate(new Date().toISOString().split('T')[0]) || null,
           timeline: this.getTimeline(),
-          period: period
+          period: period,
+          level: level
         })
       });
 
@@ -881,44 +885,56 @@ export class ClassTrackerAPI {
       }
 
       const data = await response.json();
-      return data.comment;
+      let text = (data.comment || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
+      const words = text.split(/\s+/).filter(Boolean);
+      if (words.length > 30) {
+        text = words.slice(0, 28).join(' ') + '...';
+      }
+      return text;
     } catch (error) {
       console.error('Failed to call Gemini AI comment generator, falling back to client simulation', error);
-      // Clean fallback generator if server is down
-      const completions = studentAssessments.map(a => a.completion);
-      const isGood = completions.filter(c => c === 'Hoàn thành tốt').length >= completions.length * 0.5;
-      const isOk = completions.filter(c => c === 'Hoàn thành').length >= completions.length * 0.4;
+      // Clean fallback generator strictly under 30 words, positive and encouraging
+      const isGood = level === 'T';
+      const isNeedEffort = level === 'C';
       
-      const scoreStr = studentScores.length > 0 
-        ? ` (Điểm thi: ${studentScores.map(s => `${s.semester}: ${s.score}/10`).join(', ')})`
-        : '';
-
       const isTech = subjectName.toLowerCase().includes('công nghệ');
       const subjectLabel = isTech ? 'Công nghệ' : 'Tin học';
-      const skillPractice = isTech ? 'sản phẩm thực hành công nghệ và lắp ghép mô hình' : 'nội dung thực hành gõ phím và kỹ năng máy tính';
-
-      if (period === 'Giữa học kỳ I') {
-        return `Em ${student.name} có tinh thần học tập tích cực môn ${subjectLabel}, hoàn thành tốt các bài học đầu năm. Nề nếp học tập tốt, hào hứng tương tác trong giờ học.`;
-      } else if (period === 'Cuối học kỳ I') {
-        return `Học kỳ I vừa qua, em ${student.name} tiếp thu bài nhanh, hoàn thành đầy đủ các ${skillPractice}. Chăm ngoan, có ý thức kỷ luật tốt${scoreStr}.`;
-      } else if (period === 'Giữa học kỳ II') {
-        return `Em ${student.name} duy trì thái độ học tập chuyên cần môn ${subjectLabel}, chủ động khám phá bài học mới và tích cực hợp tác cùng bạn bè trong các hoạt động.`;
-      } else if (period === 'Cuối học kỳ II') {
-        if (isGood) {
-          return `Em ${student.name} hoàn thành xuất sắc chương trình môn ${subjectLabel} cả năm học. Kỹ năng thực hành vững vàng, sáng tạo và luôn tự giác rèn luyện${scoreStr}.`;
-        } else if (isOk || completions.length === 0) {
-          return `Em ${student.name} hoàn thành tốt nội dung môn ${subjectLabel} năm học. Kỹ năng đạt chuẩn kiến thức yêu cầu, chăm chỉ và có ý thức rèn luyện tốt${scoreStr}.`;
-        } else {
-          return `Em ${student.name} cần rèn luyện thêm tính tập trung trong các giờ thực hành môn ${subjectLabel}. Em đã hoàn thành chương trình nhưng cần tích cực hơn${scoreStr}.`;
-        }
-      }
 
       if (isGood) {
-        return `Em ${student.name} có nhận thức rất nhanh nhạy về môn ${subjectLabel}. Em hoàn thành xuất sắc các ${skillPractice}, tích cực giúp đỡ bạn bè xung quanh học tập.${scoreStr}`;
-      } else if (isOk || completions.length === 0) {
-        return `Em ${student.name} chăm ngoan, hoàn thành đầy đủ bài thực hành trên lớp. Kỹ năng đạt yêu cầu chuẩn kiến thức môn ${subjectLabel}, chú ý nghe cô giảng bài.${scoreStr}`;
+        if (period === 'Giữa học kỳ I') {
+          return `Em ${student.name} chăm ngoan, tiếp thu bài nhanh, làm quen với môn ${subjectLabel} rất tốt và luôn tích cực trong giờ học.`;
+        } else if (period === 'Cuối học kỳ I') {
+          return `Em ${student.name} chăm ngoan, hoàn thành xuất sắc các bài thực hành môn ${subjectLabel} học kỳ I, tích cực phát biểu.`;
+        } else if (period === 'Giữa học kỳ II') {
+          return `Em ${student.name} có nhiều tiến bộ, thao tác máy tính nhanh nhẹn, sáng tạo và luôn hào hứng trong các tiết học.`;
+        } else if (period === 'Cuối học kỳ II') {
+          return `Em ${student.name} hoàn thành xuất sắc chương trình môn ${subjectLabel}, kỹ năng thực hành vững vàng, chăm chỉ rèn luyện.`;
+        }
+        return `Em ${student.name} chăm ngoan, tiếp thu bài nhanh, hoàn thành xuất sắc các bài thực hành và luôn tích cực trong giờ học.`;
+      } else if (isNeedEffort) {
+        // Positive and encouraging, ABSOLUTELY NO CRITICIZING
+        if (period === 'Giữa học kỳ I') {
+          return `Em ${student.name} ngoan ngoãn, có nhiều cố gắng làm quen môn ${subjectLabel}, chú ý nghe giảng. Hãy tự tin phát huy nhé!`;
+        } else if (period === 'Cuối học kỳ I') {
+          return `Em ${student.name} chăm ngoan, luôn nỗ lực trong các tiết thực hành môn ${subjectLabel}. Em hãy tiếp tục cố gắng hơn nữa nhé!`;
+        } else if (period === 'Giữa học kỳ II') {
+          return `Em ${student.name} có tiến bộ trong học tập, chăm chỉ nghe giảng và thực hành. Hãy tự tin tương tác nhiều hơn nhé!`;
+        } else if (period === 'Cuối học kỳ II') {
+          return `Em ${student.name} ngoan ngoãn, hoàn thành bài học và luôn có ý thức rèn luyện môn ${subjectLabel}. Tiếp tục cố gắng em nhé!`;
+        }
+        return `Em ${student.name} chăm ngoan, có nhiều cố gắng trong học tập, chú ý nghe giảng. Hãy tự tin phát huy hơn nữa nhé!`;
       } else {
-        return `Em ${student.name} cần chú ý tập trung hơn trong giờ học môn ${subjectLabel}. Em vẫn hoàn thành bài nhưng cần rèn luyện thêm.${scoreStr}`;
+        // Level H (Hoàn thành)
+        if (period === 'Giữa học kỳ I') {
+          return `Em ${student.name} chăm ngoan, nề nếp học tập tốt, hoàn thành đầy đủ các bài thực hành môn ${subjectLabel} đầu năm.`;
+        } else if (period === 'Cuối học kỳ I') {
+          return `Em ${student.name} nắm vững kiến thức môn ${subjectLabel}, hoàn thành tốt các bài thực hành trên lớp. Tiếp tục phát huy nhé!`;
+        } else if (period === 'Giữa học kỳ II') {
+          return `Em ${student.name} tiếp thu bài tốt, chăm chỉ thực hành môn ${subjectLabel} và tích cực tham gia các hoạt động nhóm.`;
+        } else if (period === 'Cuối học kỳ II') {
+          return `Em ${student.name} hoàn thành tốt nội dung chương trình môn ${subjectLabel}, kỹ năng thực hành đạt chuẩn, chăm ngoan.`;
+        }
+        return `Em ${student.name} chăm ngoan, chú ý nghe giảng, nắm vững kiến thức và hoàn thành tốt các bài thực hành trên lớp.`;
       }
     }
   }

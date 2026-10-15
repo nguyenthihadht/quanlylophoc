@@ -7,9 +7,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileSpreadsheet, Sparkles, Check, RefreshCw, Save, 
   Calendar, AlertCircle, Award, Users, Download, Upload,
-  CheckCircle2, Clock, Search, Layers, X, Eye, FileText, Lock
+  CheckCircle2, Clock, Search, Layers, X, Eye, FileText, Lock, Zap
 } from 'lucide-react';
-import { Class, Student, Comment, SemesterScore, Assessment } from '../types';
+import { Class, Student, Comment, SemesterScore, Assessment, EvaluationLevel } from '../types';
 
 export type AssessmentPeriod = 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II';
 
@@ -70,6 +70,72 @@ export const PERIOD_CONFIGS: PeriodConfig[] = [
   },
 ];
 
+/**
+ * Tự động tính toán mức đánh giá T, H, C theo chuẩn Thông tư 27 dựa trên dữ liệu học tập:
+ * - Đánh giá quá trình các buổi học (Hoàn thành tốt, Hoàn thành, Chưa hoàn thành, thái độ, kỹ năng)
+ * - Điểm bài kiểm tra định kỳ (đối với Cuối HK I và Cuối HK II)
+ * - T: Hoàn thành tốt | H: Hoàn thành | C: Chưa hoàn thành / Cần cố gắng
+ */
+export function computeAutoEvaluationLevel(
+  studentId: string,
+  period: AssessmentPeriod,
+  assessments: Assessment[],
+  scores: SemesterScore[],
+  currentEditScore?: string
+): EvaluationLevel {
+  const studentAssessments = assessments.filter(a => a.studentId === studentId);
+  const total = studentAssessments.length;
+  const excellentCount = studentAssessments.filter(a => a.completion === 'Hoàn thành tốt').length;
+  const goodCount = studentAssessments.filter(a => a.completion === 'Hoàn thành').length;
+  const incompleteCount = studentAssessments.filter(a => a.completion === 'Chưa hoàn thành').length;
+
+  let relevantScore: number | undefined;
+  if (currentEditScore !== undefined && currentEditScore !== '') {
+    const parsed = parseFloat(currentEditScore);
+    if (!isNaN(parsed)) relevantScore = parsed;
+  }
+  
+  if (relevantScore === undefined) {
+    if (period === 'Cuối học kỳ I') {
+      const s = scores.find(item => item.studentId === studentId && item.semester === 'Cuối học kỳ 1');
+      if (s && !isNaN(s.score)) relevantScore = s.score;
+    } else if (period === 'Cuối học kỳ II') {
+      const s = scores.find(item => item.studentId === studentId && item.semester === 'Cuối học kỳ 2');
+      if (s && !isNaN(s.score)) relevantScore = s.score;
+    }
+  }
+
+  // Nếu có điểm bài kiểm tra định kỳ (Cuối HK1 hoặc Cuối HK2)
+  if (relevantScore !== undefined) {
+    if (relevantScore >= 9) {
+      if (incompleteCount > 0 && incompleteCount > total * 0.3) return 'H';
+      return 'T';
+    }
+    if (relevantScore >= 7) {
+      if (total > 0 && excellentCount / total >= 0.45 && incompleteCount === 0) return 'T';
+      return 'H';
+    }
+    if (relevantScore >= 5) {
+      return 'H';
+    }
+    return 'C';
+  }
+
+  // Đánh giá giữa kỳ (không thi) hoặc khi chưa nhập điểm thi: tính dựa vào quá trình học tập thực tế
+  if (total > 0) {
+    if (excellentCount / total >= 0.45 && incompleteCount === 0) {
+      return 'T';
+    }
+    if (incompleteCount > 0 && (incompleteCount / total) >= 0.35) {
+      return 'C';
+    }
+    return 'H';
+  }
+
+  // Mặc định chuẩn phổ cập theo Thông tư 27 là Hoàn thành
+  return 'H';
+}
+
 interface ScoresManagerProps {
   students: Student[];
   classes: Class[];
@@ -78,8 +144,8 @@ interface ScoresManagerProps {
   scores: SemesterScore[];
   readOnly?: boolean;
   onAddOrUpdateScore: (studentId: string, semester: 'Cuối học kỳ 1' | 'Cuối học kỳ 2', score: number) => void;
-  onGenerateAIComment: (studentId: string, period?: string) => Promise<string>;
-  onAddComment: (studentId: string, content: string, type: 'AI' | 'Thủ công', period?: string) => void;
+  onGenerateAIComment: (studentId: string, period?: string, level?: EvaluationLevel) => Promise<string>;
+  onAddComment: (studentId: string, content: string, type: 'AI' | 'Thủ công', period?: string, level?: EvaluationLevel) => void;
 }
 
 export function ScoresManager({
@@ -104,6 +170,9 @@ export function ScoresManager({
   
   // Comments state: studentId -> { [Period]: string }
   const [editComments, setEditComments] = useState<Record<string, Record<AssessmentPeriod, string>>>({});
+
+  // Levels state (T, H, C): studentId -> { [Period]: EvaluationLevel }
+  const [editLevels, setEditLevels] = useState<Record<string, Record<AssessmentPeriod, EvaluationLevel>>>({});
   
   // Generating states
   const [generatingIds, setGeneratingIds] = useState<Record<string, boolean>>({});
@@ -122,6 +191,7 @@ export function ScoresManager({
     const classStudents = students.filter(s => s.classId === selectedClassId);
     const initialScores: Record<string, { hk1: string; hk2: string }> = {};
     const initialComments: Record<string, Record<AssessmentPeriod, string>> = {};
+    const initialLevels: Record<string, Record<AssessmentPeriod, EvaluationLevel>> = {};
 
     classStudents.forEach(student => {
       const hk1Score = scores.find(s => s.studentId === student.id && s.semester === 'Cuối học kỳ 1');
@@ -142,9 +212,19 @@ export function ScoresManager({
         'Cuối học kỳ II': ''
       };
 
+      const periodLevels: Record<AssessmentPeriod, EvaluationLevel> = {
+        'Giữa học kỳ I': 'H',
+        'Cuối học kỳ I': 'H',
+        'Giữa học kỳ II': 'H',
+        'Cuối học kỳ II': 'H'
+      };
+
       studentComments.forEach(c => {
         if (c.period && c.period in periodComments) {
           periodComments[c.period as AssessmentPeriod] = c.content;
+          if (c.level) {
+            periodLevels[c.period as AssessmentPeriod] = c.level;
+          }
         }
       });
 
@@ -152,13 +232,32 @@ export function ScoresManager({
       const legacyWithoutPeriod = studentComments.filter(c => !c.period);
       if (legacyWithoutPeriod.length > 0 && !periodComments['Cuối học kỳ I']) {
         periodComments['Cuối học kỳ I'] = legacyWithoutPeriod[0].content;
+        if (legacyWithoutPeriod[0].level) {
+          periodLevels['Cuối học kỳ I'] = legacyWithoutPeriod[0].level;
+        }
       }
 
+      // If level wasn't saved in comment, compute auto level from learning data
+      (['Giữa học kỳ I', 'Cuối học kỳ I', 'Giữa học kỳ II', 'Cuối học kỳ II'] as AssessmentPeriod[]).forEach(p => {
+        const hasSaved = studentComments.find(c => c.period === p && c.level);
+        if (!hasSaved) {
+          periodLevels[p] = computeAutoEvaluationLevel(
+            student.id, 
+            p, 
+            assessments, 
+            scores, 
+            p === 'Cuối học kỳ I' ? (hk1Score ? hk1Score.score.toString() : '') : p === 'Cuối học kỳ II' ? (hk2Score ? hk2Score.score.toString() : '') : undefined
+          );
+        }
+      });
+
       initialComments[student.id] = periodComments;
+      initialLevels[student.id] = periodLevels;
     });
 
     setEditScores(initialScores);
     setEditComments(initialComments);
+    setEditLevels(initialLevels);
   }, [selectedClassId, students, scores, comments]);
 
   // Target class object
@@ -200,6 +299,38 @@ export function ScoresManager({
         [semester]: val
       }
     }));
+
+    // Auto-update suggested level for this period based on new score
+    const targetPeriod: AssessmentPeriod = semester === 'hk1' ? 'Cuối học kỳ I' : 'Cuối học kỳ II';
+    const newSuggestedLevel = computeAutoEvaluationLevel(studentId, targetPeriod, assessments, scores, val);
+    setEditLevels(prev => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {
+          'Giữa học kỳ I': 'H',
+          'Cuối học kỳ I': 'H',
+          'Giữa học kỳ II': 'H',
+          'Cuối học kỳ II': 'H'
+        }),
+        [targetPeriod]: newSuggestedLevel
+      }
+    }));
+  };
+
+  // Handle evaluation level (T, H, C) change for a specific student and period
+  const handleLevelChange = (studentId: string, period: AssessmentPeriod, val: EvaluationLevel) => {
+    setEditLevels(prev => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {
+          'Giữa học kỳ I': 'H',
+          'Cuối học kỳ I': 'H',
+          'Giữa học kỳ II': 'H',
+          'Cuối học kỳ II': 'H'
+        }),
+        [period]: val
+      }
+    }));
   };
 
   // Handle comment change for a specific student and period
@@ -233,6 +364,12 @@ export function ScoresManager({
         'Giữa học kỳ II': '',
         'Cuối học kỳ II': ''
       };
+      const studentLevelMap = editLevels[studentId] || {
+        'Giữa học kỳ I': 'H',
+        'Cuối học kỳ I': 'H',
+        'Giữa học kỳ II': 'H',
+        'Cuối học kỳ II': 'H'
+      };
 
       // Save HK1 Score
       if (rowScores.hk1 !== '') {
@@ -250,23 +387,21 @@ export function ScoresManager({
         }
       }
 
-      // Save comments
+      // Save comments & levels
       if (periodToSave) {
-        const content = studentCommentMap[periodToSave]?.trim();
-        if (content) {
-          onAddComment(studentId, content, 'Thủ công', periodToSave);
-        }
+        const content = studentCommentMap[periodToSave]?.trim() || '';
+        const level = studentLevelMap[periodToSave] || computeAutoEvaluationLevel(studentId, periodToSave, assessments, scores);
+        onAddComment(studentId, content, 'Thủ công', periodToSave, level);
       } else {
         // Save all periods if no specific period specified
         (Object.keys(studentCommentMap) as AssessmentPeriod[]).forEach(period => {
-          const content = studentCommentMap[period]?.trim();
-          if (content) {
-            onAddComment(studentId, content, 'Thủ công', period);
-          }
+          const content = studentCommentMap[period]?.trim() || '';
+          const level = studentLevelMap[period] || computeAutoEvaluationLevel(studentId, period, assessments, scores);
+          onAddComment(studentId, content, 'Thủ công', period, level);
         });
       }
 
-      setSuccessMessage('Đã lưu điểm số và nhận xét thành công!');
+      setSuccessMessage('Đã lưu đánh giá (T/H/C), điểm số và nhận xét thành công!');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setErrorMessage('Lỗi khi lưu dữ liệu. Vui lòng kiểm tra lại.');
@@ -310,13 +445,31 @@ export function ScoresManager({
       if (!isNaN(numHk2)) onAddOrUpdateScore(studentId, 'Cuối học kỳ 2', numHk2);
     }
 
+    // AI automatically determines evaluation level (T, H, C) based on learning process & scores
+    const currentScore = period === 'Cuối học kỳ I' ? rowScores.hk1 : period === 'Cuối học kỳ II' ? rowScores.hk2 : undefined;
+    const currentLevel: EvaluationLevel = editLevels[studentId]?.[period] || computeAutoEvaluationLevel(studentId, period, assessments, scores, currentScore);
+
+    // Immediately update editLevels state so the UI highlights the rating T, H, or C
+    setEditLevels(prev => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {
+          'Giữa học kỳ I': 'H',
+          'Cuối học kỳ I': 'H',
+          'Giữa học kỳ II': 'H',
+          'Cuối học kỳ II': 'H'
+        }),
+        [period]: currentLevel
+      }
+    }));
+
     const genKey = `${studentId}_${period}`;
     setGeneratingIds(prev => ({ ...prev, [genKey]: true }));
     
     try {
-      const comment = await onGenerateAIComment(studentId, period);
+      const comment = await onGenerateAIComment(studentId, period, currentLevel);
       
-      // Update local state
+      // Update local state with comment
       setEditComments(prev => ({
         ...prev,
         [studentId]: {
@@ -330,10 +483,10 @@ export function ScoresManager({
         }
       }));
 
-      // Automatically persist to DB
-      onAddComment(studentId, comment, 'AI', period);
+      // Automatically persist both level and comment to DB
+      onAddComment(studentId, comment, 'AI', period, currentLevel);
       
-      setSuccessMessage(`Đã tạo nhận xét AI [${period}] thành công cho học sinh!`);
+      setSuccessMessage(`Đã đưa ra đánh giá [Mức ${currentLevel}] và nhận xét AI thành công cho học sinh!`);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setErrorMessage('Không thể tạo nhận xét AI. Hệ thống đã kích hoạt bộ dự phòng.');
@@ -344,7 +497,7 @@ export function ScoresManager({
   };
 
   // BULK GENERATE AI COMMENTS FOR ALL STUDENTS FOR A SPECIFIC PERIOD
-  const handleBulkGenerateForPeriod = async (period: AssessmentPeriod) => {
+  const handleBulkGenerateForPeriod = async (period: AssessmentPeriod, onlyEmpty = false) => {
     if (readOnly) {
       setErrorMessage('🔒 Chế độ Xem tham khảo chỉ cho phép xem thông tin. Chức năng tạo nhận xét AI hàng loạt đã bị khóa.');
       setTimeout(() => setErrorMessage(''), 3500);
@@ -355,20 +508,30 @@ export function ScoresManager({
       return;
     }
 
+    const studentsToProcess = onlyEmpty
+      ? classStudents.filter(s => !editComments[s.id]?.[period] || editComments[s.id][period].trim() === '')
+      : classStudents;
+
+    if (studentsToProcess.length === 0) {
+      setSuccessMessage('Tất cả học sinh trong lớp đều đã có đánh giá và nhận xét!');
+      setTimeout(() => setSuccessMessage(''), 3000);
+      return;
+    }
+
     // Switch active view to this period so the teacher immediately sees results
     setActiveViewMode(period);
     setBulkGeneratingPeriod(period);
-    setBulkProgress({ current: 0, total: classStudents.length });
+    setBulkProgress({ current: 0, total: studentsToProcess.length });
     setCancelBulkRef(false);
     setSuccessMessage('');
     setErrorMessage('');
 
     let generatedCount = 0;
 
-    for (let i = 0; i < classStudents.length; i++) {
+    for (let i = 0; i < studentsToProcess.length; i++) {
       if (cancelBulkRef) break;
-      const student = classStudents[i];
-      setBulkProgress({ current: i + 1, total: classStudents.length });
+      const student = studentsToProcess[i];
+      setBulkProgress({ current: i + 1, total: studentsToProcess.length });
       
       const genKey = `${student.id}_${period}`;
       setGeneratingIds(prev => ({ ...prev, [genKey]: true }));
@@ -385,7 +548,24 @@ export function ScoresManager({
           if (!isNaN(numHk2)) onAddOrUpdateScore(student.id, 'Cuối học kỳ 2', numHk2);
         }
 
-        const commentText = await onGenerateAIComment(student.id, period);
+        const currentScore = period === 'Cuối học kỳ I' ? rowScores.hk1 : period === 'Cuối học kỳ II' ? rowScores.hk2 : undefined;
+        const currentLevel: EvaluationLevel = editLevels[student.id]?.[period] || computeAutoEvaluationLevel(student.id, period, assessments, scores, currentScore);
+
+        // Update level in state immediately
+        setEditLevels(prev => ({
+          ...prev,
+          [student.id]: {
+            ...(prev[student.id] || {
+              'Giữa học kỳ I': 'H',
+              'Cuối học kỳ I': 'H',
+              'Giữa học kỳ II': 'H',
+              'Cuối học kỳ II': 'H'
+            }),
+            [period]: currentLevel
+          }
+        }));
+
+        const commentText = await onGenerateAIComment(student.id, period, currentLevel);
 
         // Update local state in real-time
         setEditComments(prev => ({
@@ -401,8 +581,8 @@ export function ScoresManager({
           }
         }));
 
-        // Persist comment
-        onAddComment(student.id, commentText, 'AI', period);
+        // Persist comment with level
+        onAddComment(student.id, commentText, 'AI', period, currentLevel);
         generatedCount++;
       } catch (err) {
         console.error(`Lỗi tạo nhận xét AI cho học sinh ${student.name}:`, err);
@@ -413,18 +593,18 @@ export function ScoresManager({
 
     setBulkGeneratingPeriod(null);
     setBulkProgress(null);
-    setSuccessMessage(`Đã tạo tự động nhận xét AI thành công cho ${generatedCount}/${classStudents.length} học sinh lớp ${targetClass?.name} tại thời điểm ${period}!`);
+    setSuccessMessage(`Đã đưa ra đánh giá (T/H/C) và nhận xét AI tích cực (< 30 chữ) thành công cho ${generatedCount}/${studentsToProcess.length} học sinh lớp ${targetClass?.name} tại thời điểm ${period}!`);
     setTimeout(() => setSuccessMessage(''), 5000);
   };
 
-  // EXPORT EXCEL WITH COMPLETE 4 PERIODS & SCORES
+  // EXPORT EXCEL WITH COMPLETE 4 PERIODS, T/H/C LEVELS & SCORES
   const handleExportExcel = () => {
     if (!targetClass) return;
 
     const className = targetClass.name;
     const filename = `Hoc_Ba_Tin_Hoc_Lop_${className}_4_Thoi_Diem.csv`;
 
-    const headers = 'STT,Mã học sinh,Họ và tên,Giới tính,Lớp,Nhận xét Giữa HK1,Điểm thi Cuối HK1,Nhận xét Cuối HK1,Nhận xét Giữa HK2,Điểm thi Cuối HK2,Nhận xét Cuối HK2\n';
+    const headers = 'STT,Mã học sinh,Họ và tên,Giới tính,Lớp,Đánh giá Giữa HK1 (T/H/C),Nhận xét Giữa HK1,Điểm thi Cuối HK1,Đánh giá Cuối HK1 (T/H/C),Nhận xét Cuối HK1,Đánh giá Giữa HK2 (T/H/C),Nhận xét Giữa HK2,Điểm thi Cuối HK2,Đánh giá Cuối HK2 (T/H/C),Nhận xét Cuối HK2\n';
     
     const rows = classStudents.map((s, index) => {
       const rowScores = editScores[s.id] || { hk1: '', hk2: '' };
@@ -434,13 +614,26 @@ export function ScoresManager({
         'Giữa học kỳ II': '',
         'Cuối học kỳ II': ''
       };
+      const levelMap = editLevels[s.id] || {
+        'Giữa học kỳ I': computeAutoEvaluationLevel(s.id, 'Giữa học kỳ I', assessments, scores),
+        'Cuối học kỳ I': computeAutoEvaluationLevel(s.id, 'Cuối học kỳ I', assessments, scores, rowScores.hk1),
+        'Giữa học kỳ II': computeAutoEvaluationLevel(s.id, 'Giữa học kỳ II', assessments, scores),
+        'Cuối học kỳ II': computeAutoEvaluationLevel(s.id, 'Cuối học kỳ II', assessments, scores, rowScores.hk2),
+      };
 
+      const dgGHK1 = levelMap['Giữa học kỳ I'] || 'H';
       const cGHK1 = (commentMap['Giữa học kỳ I'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgCHK1 = levelMap['Cuối học kỳ I'] || 'H';
       const cCHK1 = (commentMap['Cuối học kỳ I'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgGHK2 = levelMap['Giữa học kỳ II'] || 'H';
       const cGHK2 = (commentMap['Giữa học kỳ II'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgCHK2 = levelMap['Cuối học kỳ II'] || 'H';
       const cCHK2 = (commentMap['Cuối học kỳ II'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
-      return `${index + 1},"${s.studentId}","${s.name}","${s.gender}","${className}","${cGHK1}","${rowScores.hk1 || '-'}","${cCHK1}","${cGHK2}","${rowScores.hk2 || '-'}","${cCHK2}"`;
+      return `${index + 1},"${s.studentId}","${s.name}","${s.gender}","${className}","${dgGHK1}","${cGHK1}","${rowScores.hk1 || '-'}","${dgCHK1}","${cCHK1}","${dgGHK2}","${cGHK2}","${rowScores.hk2 || '-'}","${dgCHK2}","${cCHK2}"`;
     }).join('\n');
 
     const blob = new Blob(['\ufeff' + headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -459,7 +652,7 @@ export function ScoresManager({
     const className = targetClass.name;
     const filename = `Mau_Nhap_Diem_Hoc_Ba_${className}.csv`;
 
-    const headers = 'Mã học sinh,Họ và tên,Điểm thi Cuối HK1,Điểm thi Cuối HK2,Nhận xét Giữa HK1,Nhận xét Cuối HK1,Nhận xét Giữa HK2,Nhận xét Cuối HK2\n';
+    const headers = 'Mã học sinh,Họ và tên,Đánh giá Giữa HK1 (T/H/C),Nhận xét Giữa HK1,Điểm thi Cuối HK1,Đánh giá Cuối HK1 (T/H/C),Nhận xét Cuối HK1,Đánh giá Giữa HK2 (T/H/C),Nhận xét Giữa HK2,Điểm thi Cuối HK2,Đánh giá Cuối HK2 (T/H/C),Nhận xét Cuối HK2\n';
     
     const rows = classStudents.map((s) => {
       const rowScores = editScores[s.id] || { hk1: '', hk2: '' };
@@ -469,13 +662,26 @@ export function ScoresManager({
         'Giữa học kỳ II': '',
         'Cuối học kỳ II': ''
       };
+      const levelMap = editLevels[s.id] || {
+        'Giữa học kỳ I': computeAutoEvaluationLevel(s.id, 'Giữa học kỳ I', assessments, scores),
+        'Cuối học kỳ I': computeAutoEvaluationLevel(s.id, 'Cuối học kỳ I', assessments, scores, rowScores.hk1),
+        'Giữa học kỳ II': computeAutoEvaluationLevel(s.id, 'Giữa học kỳ II', assessments, scores),
+        'Cuối học kỳ II': computeAutoEvaluationLevel(s.id, 'Cuối học kỳ II', assessments, scores, rowScores.hk2),
+      };
 
+      const dgGHK1 = levelMap['Giữa học kỳ I'] || 'H';
       const cGHK1 = (commentMap['Giữa học kỳ I'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgCHK1 = levelMap['Cuối học kỳ I'] || 'H';
       const cCHK1 = (commentMap['Cuối học kỳ I'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgGHK2 = levelMap['Giữa học kỳ II'] || 'H';
       const cGHK2 = (commentMap['Giữa học kỳ II'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
+
+      const dgCHK2 = levelMap['Cuối học kỳ II'] || 'H';
       const cCHK2 = (commentMap['Cuối học kỳ II'] || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
-      return `"${s.studentId}","${s.name}","${rowScores.hk1}","${rowScores.hk2}","${cGHK1}","${cCHK1}","${cGHK2}","${cCHK2}"`;
+      return `"${s.studentId}","${s.name}","${dgGHK1}","${cGHK1}","${rowScores.hk1}","${dgCHK1}","${cCHK1}","${dgGHK2}","${cGHK2}","${rowScores.hk2}","${dgCHK2}","${cCHK2}"`;
     }).join('\n');
 
     const blob = new Blob(['\ufeff' + headers + rows], { type: 'text/csv;charset=utf-8;' });
@@ -487,7 +693,7 @@ export function ScoresManager({
     link.click();
     document.body.removeChild(link);
     
-    setSuccessMessage('Đã tải xuống file mẫu thành công! Bạn hãy mở bằng Excel để nhập điểm và nhận xét.');
+    setSuccessMessage('Đã tải xuống file mẫu thành công! Bạn hãy mở bằng Excel để nhập mức đánh giá T, H, C, điểm và nhận xét.');
     setTimeout(() => setSuccessMessage(''), 4000);
   };
 
@@ -522,11 +728,27 @@ export function ScoresManager({
         const hk1Index = headers.findIndex(h => h.toLowerCase().includes('hk1') || h.toLowerCase().includes('học kỳ 1') || h.toLowerCase().includes('học kì 1'));
         const hk2Index = headers.findIndex(h => h.toLowerCase().includes('hk2') || h.toLowerCase().includes('học kỳ 2') || h.toLowerCase().includes('học kì 2'));
         
-        const ghk1Index = headers.findIndex(h => h.toLowerCase().includes('giữa hk1') || h.toLowerCase().includes('giữa học kỳ 1') || h.toLowerCase().includes('giữa học kì 1') || h.toLowerCase().includes('giữa kì 1'));
-        const chk1Index = headers.findIndex(h => h.toLowerCase().includes('cuối hk1') || h.toLowerCase().includes('cuối học kỳ 1') || h.toLowerCase().includes('cuối học kì 1') || h.toLowerCase().includes('cuối kì 1'));
-        const ghk2Index = headers.findIndex(h => h.toLowerCase().includes('giữa hk2') || h.toLowerCase().includes('giữa học kỳ 2') || h.toLowerCase().includes('giữa học kì 2') || h.toLowerCase().includes('giữa kì 2'));
-        const chk2Index = headers.findIndex(h => h.toLowerCase().includes('cuối hk2') || h.toLowerCase().includes('cuối học kỳ 2') || h.toLowerCase().includes('cuối học kì 2') || h.toLowerCase().includes('cuối kì 2'));
+        // Level T, H, C columns
+        const dgGhk1Index = headers.findIndex(h => (h.toLowerCase().includes('đánh giá') || h.toLowerCase().includes('mức') || h.toLowerCase().includes('đg')) && (h.toLowerCase().includes('giữa hk1') || h.toLowerCase().includes('giữa kỳ 1') || h.toLowerCase().includes('giữa kì 1')));
+        const dgChk1Index = headers.findIndex(h => (h.toLowerCase().includes('đánh giá') || h.toLowerCase().includes('mức') || h.toLowerCase().includes('đg')) && (h.toLowerCase().includes('cuối hk1') || h.toLowerCase().includes('cuối kỳ 1') || h.toLowerCase().includes('cuối kì 1')));
+        const dgGhk2Index = headers.findIndex(h => (h.toLowerCase().includes('đánh giá') || h.toLowerCase().includes('mức') || h.toLowerCase().includes('đg')) && (h.toLowerCase().includes('giữa hk2') || h.toLowerCase().includes('giữa kỳ 2') || h.toLowerCase().includes('giữa kì 2')));
+        const dgChk2Index = headers.findIndex(h => (h.toLowerCase().includes('đánh giá') || h.toLowerCase().includes('mức') || h.toLowerCase().includes('đg')) && (h.toLowerCase().includes('cuối hk2') || h.toLowerCase().includes('cuối kỳ 2') || h.toLowerCase().includes('cuối kì 2')));
+
+        // Comments columns
+        const ghk1Index = headers.findIndex(h => h.toLowerCase().includes('nhận xét') && (h.toLowerCase().includes('giữa hk1') || h.toLowerCase().includes('giữa học kỳ 1') || h.toLowerCase().includes('giữa học kì 1') || h.toLowerCase().includes('giữa kì 1')));
+        const chk1Index = headers.findIndex(h => h.toLowerCase().includes('nhận xét') && (h.toLowerCase().includes('cuối hk1') || h.toLowerCase().includes('cuối học kỳ 1') || h.toLowerCase().includes('cuối học kì 1') || h.toLowerCase().includes('cuối kì 1')));
+        const ghk2Index = headers.findIndex(h => h.toLowerCase().includes('nhận xét') && (h.toLowerCase().includes('giữa hk2') || h.toLowerCase().includes('giữa học kỳ 2') || h.toLowerCase().includes('giữa học kì 2') || h.toLowerCase().includes('giữa kì 2')));
+        const chk2Index = headers.findIndex(h => h.toLowerCase().includes('nhận xét') && (h.toLowerCase().includes('cuối hk2') || h.toLowerCase().includes('cuối học kỳ 2') || h.toLowerCase().includes('cuối học kì 2') || h.toLowerCase().includes('cuối kì 2')));
         const genericNxIndex = headers.findIndex(h => h.toLowerCase().includes('nhận xét') || h.toLowerCase().includes('comment'));
+
+        const parseLevelVal = (val?: string): EvaluationLevel | null => {
+          if (!val) return null;
+          const clean = val.toUpperCase().trim();
+          if (clean === 'T' || clean.includes('TỐT') || clean.includes('HOÀN THÀNH TỐT')) return 'T';
+          if (clean === 'H' || clean.includes('HOÀN THÀNH')) return 'H';
+          if (clean === 'C' || clean.includes('CHƯA') || clean.includes('CỐ GẮNG')) return 'C';
+          return null;
+        };
 
         if (mshsIndex === -1) {
           setErrorMessage('Không tìm thấy cột Mã học sinh trong file. Vui lòng kiểm tra lại cấu trúc.');
@@ -536,6 +758,7 @@ export function ScoresManager({
         let updatedCount = 0;
         const newEditScores = { ...editScores };
         const newEditComments = { ...editComments };
+        const newEditLevels = { ...editLevels };
 
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
@@ -586,6 +809,34 @@ export function ScoresManager({
               }
             }
 
+            // Levels T, H, C
+            const studentLevelsObj = {
+              ...(newEditLevels[student.id] || {
+                'Giữa học kỳ I': 'H',
+                'Cuối học kỳ I': 'H',
+                'Giữa học kỳ II': 'H',
+                'Cuối học kỳ II': 'H'
+              })
+            };
+
+            if (dgGhk1Index !== -1) {
+              const parsed = parseLevelVal(row[dgGhk1Index]);
+              if (parsed) studentLevelsObj['Giữa học kỳ I'] = parsed;
+            }
+            if (dgChk1Index !== -1) {
+              const parsed = parseLevelVal(row[dgChk1Index]);
+              if (parsed) studentLevelsObj['Cuối học kỳ I'] = parsed;
+            }
+            if (dgGhk2Index !== -1) {
+              const parsed = parseLevelVal(row[dgGhk2Index]);
+              if (parsed) studentLevelsObj['Giữa học kỳ II'] = parsed;
+            }
+            if (dgChk2Index !== -1) {
+              const parsed = parseLevelVal(row[dgChk2Index]);
+              if (parsed) studentLevelsObj['Cuối học kỳ II'] = parsed;
+            }
+            newEditLevels[student.id] = studentLevelsObj;
+
             // Comments for 4 periods
             const studentCommentObj = {
               ...(newEditComments[student.id] || {
@@ -612,6 +863,7 @@ export function ScoresManager({
 
         setEditScores(newEditScores);
         setEditComments(newEditComments);
+        setEditLevels(newEditLevels);
         e.target.value = '';
 
         setSuccessMessage(`Đã nạp thành công dữ liệu cho ${updatedCount} học sinh từ file CSV! Nhấn nút "Lưu dữ liệu lớp" để hoàn tất.`);
@@ -646,7 +898,7 @@ export function ScoresManager({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-200 text-xs font-bold border border-indigo-500/30">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> Trợ lý AI Nhận xét Học bạ Định kỳ Tiểu học (Thông tư 27)
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> Trợ lý AI Ghi điểm & Nhận xét Định kỳ Tiểu học (Thông tư 27)
             </div>
             <h2 className="text-xl md:text-2xl font-black font-display tracking-tight text-white flex items-center gap-2">
               Tạo Nhận Xét Tự Động Bằng AI Cho Từng Thời Điểm
@@ -1018,7 +1270,7 @@ export function ScoresManager({
               </span>
               <h3 className="font-black text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-blue-600" />
-                <span>Sổ Ghi Điểm & Học Bạ Điện Tử ({targetClass?.subject || 'Tin học'})</span>
+                <span>Sổ Ghi Điểm & Nhận Xét ({targetClass?.subject || 'Tin học'})</span>
               </h3>
             </div>
             <p className="text-xs text-slate-400">
@@ -1029,38 +1281,85 @@ export function ScoresManager({
           </div>
 
           {activeViewMode !== 'all' && !readOnly && (
-            <button
-              type="button"
-              onClick={() => handleBulkGenerateForPeriod(activeViewMode)}
-              disabled={isBulkActive}
-              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Sparkles className="w-3.5 h-3.5" /> Tạo AI cho toàn bộ lớp ({activeViewMode})
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleBulkGenerateForPeriod(activeViewMode, false)}
+                disabled={isBulkActive}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Tự động tính đánh giá T/H/C và sinh lời nhận xét tích cực dưới 30 chữ cho toàn bộ học sinh"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Tạo Đánh giá & Nhận xét cả lớp ({activeViewMode})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkGenerateForPeriod(activeViewMode, true)}
+                disabled={isBulkActive}
+                className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                title="Chỉ tạo đánh giá và nhận xét cho những học sinh chưa có"
+              >
+                <Zap className="w-3.5 h-3.5 text-indigo-600" /> Điền cho học sinh chưa có
+              </button>
+            </div>
           )}
+        </div>
+
+        {/* Helpful Explanation Legend for Thông tư 27 Evaluation */}
+        <div className="mx-6 my-3 p-3 bg-gradient-to-r from-blue-50/80 via-indigo-50/70 to-slate-50 dark:from-slate-900/80 dark:via-indigo-950/40 dark:to-slate-900/60 rounded-2xl border border-blue-200/70 dark:border-indigo-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="px-2 py-1 rounded-lg bg-indigo-600 text-white font-black text-[11px] tracking-wide shrink-0">TT 27</span>
+            <div>
+              <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 flex-wrap">
+                <span>Cột Đánh giá T, H, C (Trước cột Lời nhận xét):</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 font-extrabold text-[11px]">
+                  T: Hoàn thành tốt
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 font-extrabold text-[11px]">
+                  H: Hoàn thành
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 font-extrabold text-[11px]">
+                  C: Chưa hoàn thành
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                Hệ thống tự động phân tích dữ liệu học tập và điểm kiểm tra để đưa ra mức T, H, C và lời nhận xét tích cực dưới 30 chữ (không chê bai học sinh). Thầy/Cô có thể bấm chọn để điều chỉnh bất cứ lúc nào.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           {activeViewMode !== 'all' ? (
             /* VIEW 1: SINGLE-PERIOD FOCUSED VIEW */
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left border-collapse min-w-[950px]">
               <thead>
                 <tr className="border-b border-slate-150 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-900/30 text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  <th className="py-3.5 px-4 w-12 text-center">STT</th>
-                  <th className="py-3.5 px-4 w-28">Mã học sinh</th>
-                  <th className="py-3.5 px-4 w-44">Họ và Tên</th>
+                  <th className="py-3.5 px-3 w-12 text-center">STT</th>
+                  <th className="py-3.5 px-3 w-28">Mã học sinh</th>
+                  <th className="py-3.5 px-3 w-40">Họ và Tên</th>
                   
                   {/* Score column if period has test score */}
                   {PERIOD_CONFIGS.find(p => p.id === activeViewMode)?.hasScore && (
-                    <th className="py-3.5 px-4 w-28 text-center text-amber-600 dark:text-amber-400 font-extrabold">
+                    <th className="py-3.5 px-3 w-24 text-center text-amber-600 dark:text-amber-400 font-extrabold">
                       Điểm thi (0-10)
                     </th>
                   )}
                   
-                  <th className="py-3.5 px-4">
-                    Nhận xét học bạ: <span className="text-indigo-600 dark:text-indigo-400">{activeViewMode}</span>
+                  {/* T, H, C Assessment Column - PLACED BEFORE COMMENTS AS REQUESTED */}
+                  <th className="py-3.5 px-3 w-44 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="text-slate-800 dark:text-slate-100 font-black">Đánh giá</span>
+                      <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-black border border-indigo-200 dark:border-indigo-800">
+                        T / H / C
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 font-normal lowercase tracking-normal">Dựa vào dữ liệu học tập</div>
                   </th>
-                  <th className="py-3.5 px-4 w-36 text-center">Thao tác</th>
+
+                  <th className="py-3.5 px-4">
+                    Lời nhận xét: <span className="text-indigo-600 dark:text-indigo-400">{activeViewMode}</span>
+                  </th>
+                  <th className="py-3.5 px-3 w-32 text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 text-xs">
@@ -1082,23 +1381,28 @@ export function ScoresManager({
                     const isGen = !!generatingIds[genKey];
                     const commentVal = editComments[student.id]?.[currentPeriod] || '';
 
+                    const currentScoreStr = editScores[student.id]?.[scoreKey];
+                    const autoLevel = computeAutoEvaluationLevel(student.id, currentPeriod, assessments, scores, currentScoreStr);
+                    const currentLevel = editLevels[student.id]?.[currentPeriod] || autoLevel;
+
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/10 transition-colors">
-                        <td className="py-3.5 px-4 font-bold text-center text-slate-400">{idx + 1}</td>
-                        <td className="py-3.5 px-4 font-mono font-bold text-slate-500 dark:text-slate-400">
+                        <td className="py-3.5 px-3 font-bold text-center text-slate-500">{idx + 1}</td>
+                        <td className="py-3.5 px-3 font-mono font-bold text-slate-700 dark:text-slate-300">
                           {student.studentId}
                         </td>
-                        <td className="py-3.5 px-4">
-                          <div className="font-bold text-slate-800 dark:text-slate-100">{student.name}</div>
-                          <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                        <td className="py-3.5 px-3">
+                          {/* Họ và tên học sinh chữ trắng nổi bật trên nền tối / đen trên nền sáng */}
+                          <div className="font-black text-slate-900 dark:text-white text-sm whitespace-nowrap leading-tight tracking-wide">{student.name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 whitespace-nowrap">
                             <span>{student.gender}</span> · 
                             <span>{studentAssessments.length} tiết đánh giá</span>
                           </div>
                         </td>
 
-                        {/* Optional Score input */}
+                        {/* Optional Score input: chữ đen trên nền trắng */}
                         {hasScore && (
-                          <td className="py-3.5 px-4 text-center">
+                          <td className="py-3.5 px-3 text-center">
                             <input
                               type="text"
                               value={editScores[student.id]?.[scoreKey] || ''}
@@ -1106,30 +1410,73 @@ export function ScoresManager({
                               placeholder="-"
                               readOnly={readOnly}
                               disabled={readOnly}
-                              className={`w-16 px-2.5 py-1.5 text-center font-black text-sm rounded-xl border border-slate-300 dark:border-slate-600 ${
-                                readOnly ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' : 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500'
+                              className={`w-16 px-2.5 py-1.5 text-center font-black text-sm rounded-xl border border-slate-300 bg-white text-black shadow-inner ${
+                                readOnly ? 'opacity-70 cursor-default' : 'focus:outline-none focus:ring-2 focus:ring-amber-500'
                               }`}
                             />
                           </td>
                         )}
 
-                        {/* Comment Textarea */}
+                        {/* CỘT ĐÁNH GIÁ T, H, C DỰA VÀO DỮ LIỆU HỌC TẬP (NẰM TRƯỚC CỘT LỜI NHẬN XÉT) */}
+                        <td className="py-3.5 px-3 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <div className="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-slate-700/80 border border-slate-200 dark:border-slate-600">
+                              {(['T', 'H', 'C'] as EvaluationLevel[]).map((lvl) => {
+                                const isSelected = currentLevel === lvl;
+                                const colorClasses = 
+                                  lvl === 'T'
+                                    ? isSelected ? 'bg-emerald-600 text-white shadow-xs font-black' : 'text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100'
+                                    : lvl === 'H'
+                                    ? isSelected ? 'bg-blue-600 text-white shadow-xs font-black' : 'text-blue-800 bg-blue-50/80 hover:bg-blue-100'
+                                    : isSelected ? 'bg-amber-600 text-white shadow-xs font-black' : 'text-amber-800 bg-amber-50/80 hover:bg-amber-100';
+                                
+                                const label = lvl === 'T' ? 'T: Hoàn thành tốt' : lvl === 'H' ? 'H: Hoàn thành' : 'C: Chưa hoàn thành / Cần cố gắng';
+
+                                return (
+                                  <button
+                                    key={lvl}
+                                    type="button"
+                                    disabled={readOnly}
+                                    onClick={() => handleLevelChange(student.id, currentPeriod, lvl)}
+                                    title={label}
+                                    className={`w-8 h-7 text-xs font-bold rounded-lg transition-all flex items-center justify-center cursor-pointer disabled:cursor-default ${colorClasses}`}
+                                  >
+                                    {lvl}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <span className="text-[10px] text-slate-500 flex items-center gap-1 font-medium">
+                              {autoLevel === currentLevel ? (
+                                <span className="text-slate-600 dark:text-slate-400" title="Tự động tính từ quá trình học tập thực tế">
+                                  ⚡ Tự động: <strong className="font-bold">{autoLevel}</strong>
+                                </span>
+                              ) : (
+                                <span className="text-indigo-600 dark:text-indigo-400 font-bold" title="Giáo viên đã tùy chỉnh đánh giá">
+                                  ✎ Đã sửa (gốc: {autoLevel})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Comment Textarea: Chữ đen trên nền trắng, dưới 30 từ, tích cực */}
                         <td className="py-3.5 px-4">
                           <div className="space-y-1">
                             <textarea
                               value={commentVal}
                               onChange={(e) => handleCommentChange(student.id, currentPeriod, e.target.value)}
-                              placeholder={readOnly ? (commentVal ? commentVal : `Chưa có nhận xét cho ${currentPeriod}.`) : `Chưa có nhận xét cho ${currentPeriod}. Nhấn nút "✨ Tạo AI" để tạo tự động...`}
+                              placeholder={readOnly ? (commentVal ? commentVal : `Chưa có nhận xét cho ${currentPeriod}.`) : `Nhận xét ngắn gọn dưới 30 chữ (Mức ${currentLevel}). Bấm "✨ Tạo AI" để tự động đưa ra đánh giá và nhận xét!`}
                               readOnly={readOnly}
-                              className={`w-full h-16 p-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 ${
-                                readOnly ? 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300' : 'bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                              } leading-relaxed`}
+                              className={`w-full h-16 p-2.5 text-xs rounded-xl border border-slate-300 bg-white text-black font-medium placeholder:text-slate-400 shadow-inner leading-relaxed ${
+                                readOnly ? 'opacity-80 cursor-default' : 'focus:outline-none focus:ring-2 focus:ring-blue-500'
+                              }`}
                             />
                           </div>
                         </td>
 
                         {/* Row Action Buttons */}
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-3 text-center">
                           {readOnly ? (
                             <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-750 px-2 py-1 rounded">
                               Chỉ xem
@@ -1141,13 +1488,13 @@ export function ScoresManager({
                                 onClick={() => handleGenerateAIForStudent(student.id, currentPeriod)}
                                 disabled={isGen}
                                 className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white dark:bg-indigo-950/40 dark:hover:bg-indigo-600 dark:text-indigo-300 dark:hover:text-white rounded-lg font-bold text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
-                                title={`Tự động sinh nhận xét AI tại thời điểm: ${currentPeriod}`}
+                                title={`Tự động đưa ra Đánh giá T/H/C và Nhận xét AI ngắn gọn dưới 30 chữ theo thời điểm: ${currentPeriod}`}
                               >
                                 {isGen ? (
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                 ) : (
                                   <>
-                                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ✨ Tạo AI
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> ✨ Tạo AI ({currentLevel})
                                   </>
                                 )}
                               </button>
@@ -1169,26 +1516,59 @@ export function ScoresManager({
               </tbody>
             </table>
           ) : (
-            /* VIEW 2: COMPREHENSIVE 4-PERIOD FULL YEAR TABLE */
-            <table className="w-full text-left border-collapse min-w-[1100px]">
+            /* VIEW 2: COMPREHENSIVE 4-PERIOD FULL YEAR TABLE VỚI CỘT ĐÁNH GIÁ T, H, C TRƯỚC LỜI NHẬN XÉT CHO MỖI THỜI ĐIỂM */
+            <table className="w-full text-left border-collapse min-w-[1300px]">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-900/40 text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  <th className="py-3 px-3 w-10 text-center">STT</th>
-                  <th className="py-3 px-3 w-24">Mã HS</th>
-                  <th className="py-3 px-3 w-36">Họ và Tên</th>
-                  <th className="py-3 px-3 w-48 text-blue-600 dark:text-blue-400">1. Giữa HK I</th>
-                  <th className="py-3 px-2 w-16 text-center text-amber-600">Điểm 1</th>
-                  <th className="py-3 px-3 w-48 text-amber-600 dark:text-amber-400">2. Cuối HK I</th>
-                  <th className="py-3 px-3 w-48 text-indigo-600 dark:text-indigo-400">3. Giữa HK II</th>
-                  <th className="py-3 px-2 w-16 text-center text-emerald-600">Điểm 2</th>
-                  <th className="py-3 px-3 w-48 text-emerald-600 dark:text-emerald-400">4. Cuối HK II</th>
-                  <th className="py-3 px-3 w-20 text-center">Lưu</th>
+                  <th className="py-3 px-2 w-10 text-center">STT</th>
+                  <th className="py-3 px-2 w-20">Mã HS</th>
+                  <th className="py-3 px-2 w-32">Họ và Tên</th>
+                  
+                  {/* 1. Giữa HK I: Đánh giá T/H/C -> Lời nhận xét */}
+                  <th className="py-3 px-1.5 w-16 text-center text-blue-600 dark:text-blue-400 font-black">
+                    ĐG 1 (T/H/C)
+                  </th>
+                  <th className="py-3 px-2 min-w-[130px] text-blue-600 dark:text-blue-400">
+                    1. Nhận xét Giữa HK I
+                  </th>
+
+                  {/* 2. Cuối HK I: Điểm thi 1 -> Đánh giá T/H/C -> Lời nhận xét */}
+                  <th className="py-3 px-1 w-14 text-center text-amber-600 font-black">
+                    Điểm 1
+                  </th>
+                  <th className="py-3 px-1.5 w-16 text-center text-amber-600 dark:text-amber-400 font-black">
+                    ĐG 2 (T/H/C)
+                  </th>
+                  <th className="py-3 px-2 min-w-[130px] text-amber-600 dark:text-amber-400">
+                    2. Nhận xét Cuối HK I
+                  </th>
+
+                  {/* 3. Giữa HK II: Đánh giá T/H/C -> Lời nhận xét */}
+                  <th className="py-3 px-1.5 w-16 text-center text-indigo-600 dark:text-indigo-400 font-black">
+                    ĐG 3 (T/H/C)
+                  </th>
+                  <th className="py-3 px-2 min-w-[130px] text-indigo-600 dark:text-indigo-400">
+                    3. Nhận xét Giữa HK II
+                  </th>
+
+                  {/* 4. Cuối HK II: Điểm thi 2 -> Đánh giá T/H/C -> Lời nhận xét */}
+                  <th className="py-3 px-1 w-14 text-center text-emerald-600 font-black">
+                    Điểm 2
+                  </th>
+                  <th className="py-3 px-1.5 w-16 text-center text-emerald-600 dark:text-emerald-400 font-black">
+                    ĐG 4 (T/H/C)
+                  </th>
+                  <th className="py-3 px-2 min-w-[130px] text-emerald-600 dark:text-emerald-400">
+                    4. Nhận xét Cuối HK II
+                  </th>
+
+                  <th className="py-3 px-2 w-14 text-center">Lưu</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 text-xs">
                 {filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <td colSpan={13} className="py-12 text-center text-slate-400">
                       Không tìm thấy học sinh nào phù hợp.
                     </td>
                   </tr>
@@ -1201,44 +1581,79 @@ export function ScoresManager({
                       'Giữa học kỳ II': '',
                       'Cuối học kỳ II': ''
                     };
+                    const levelMap = editLevels[student.id] || {
+                      'Giữa học kỳ I': 'H',
+                      'Cuối học kỳ I': 'H',
+                      'Giữa học kỳ II': 'H',
+                      'Cuối học kỳ II': 'H'
+                    };
+
+                    const autoLvl1 = computeAutoEvaluationLevel(student.id, 'Giữa học kỳ I', assessments, scores);
+                    const autoLvl2 = computeAutoEvaluationLevel(student.id, 'Cuối học kỳ I', assessments, scores, rowScores.hk1);
+                    const autoLvl3 = computeAutoEvaluationLevel(student.id, 'Giữa học kỳ II', assessments, scores);
+                    const autoLvl4 = computeAutoEvaluationLevel(student.id, 'Cuối học kỳ II', assessments, scores, rowScores.hk2);
+
+                    const lvl1 = levelMap['Giữa học kỳ I'] || autoLvl1;
+                    const lvl2 = levelMap['Cuối học kỳ I'] || autoLvl2;
+                    const lvl3 = levelMap['Giữa học kỳ II'] || autoLvl3;
+                    const lvl4 = levelMap['Cuối học kỳ II'] || autoLvl4;
 
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-700/10 transition-colors">
-                        <td className="py-3 px-3 font-bold text-center text-slate-400">{idx + 1}</td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-500 text-[11px]">{student.studentId}</td>
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{student.name}</div>
-                          <div className="text-[10px] text-slate-400">{student.gender}</div>
+                        <td className="py-3 px-2 font-bold text-center text-slate-500">{idx + 1}</td>
+                        <td className="py-3 px-2 font-mono font-bold text-slate-700 dark:text-slate-300 text-[11px]">{student.studentId}</td>
+                        <td className="py-3 px-2">
+                          <div className="font-black text-slate-900 dark:text-white text-xs whitespace-nowrap tracking-wide">{student.name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">{student.gender}</div>
                         </td>
 
-                        {/* 1. Giữa HK I */}
-                        <td className="py-2 px-2">
+                        {/* 1. Giữa HK I - Đánh giá T, H, C */}
+                        <td className="py-2 px-1 text-center">
+                          <select
+                            value={lvl1}
+                            disabled={readOnly}
+                            onChange={(e) => handleLevelChange(student.id, 'Giữa học kỳ I', e.target.value as EvaluationLevel)}
+                            className={`w-12 py-1 text-center font-black text-xs rounded-lg border outline-none cursor-pointer ${
+                              lvl1 === 'T'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-black'
+                                : lvl1 === 'H'
+                                ? 'bg-blue-50 text-blue-800 border-blue-300 font-black'
+                                : 'bg-amber-50 text-amber-800 border-amber-300 font-black'
+                            }`}
+                            title={`Mức đánh giá Giữa HK I: ${lvl1} (Tự động từ dữ liệu: ${autoLvl1})`}
+                          >
+                            <option value="T">T</option>
+                            <option value="H">H</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+
+                        {/* 1. Giữa HK I - Lời nhận xét: Chữ đen trên nền trắng */}
+                        <td className="py-2 px-1.5">
                           <div className="relative group">
                             <textarea
                               value={commentMap['Giữa học kỳ I'] || ''}
                               onChange={(e) => handleCommentChange(student.id, 'Giữa học kỳ I', e.target.value)}
-                              placeholder={readOnly ? (commentMap['Giữa học kỳ I'] || '-') : "Nhận xét Giữa HK1..."}
+                              placeholder={readOnly ? (commentMap['Giữa học kỳ I'] || '-') : `Nhận xét Giữa HK1 (${lvl1})...`}
                               readOnly={readOnly}
-                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border leading-tight ${
-                                readOnly 
-                                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-default' 
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500'
+                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border border-slate-300 bg-white text-black font-medium placeholder:text-slate-400 shadow-inner leading-tight ${
+                                readOnly ? 'opacity-80 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-blue-500'
                               }`}
                             />
                             {!readOnly && (
                               <button
                                 type="button"
                                 onClick={() => handleGenerateAIForStudent(student.id, 'Giữa học kỳ I')}
-                                className="absolute right-1 top-1 p-1 bg-white/90 dark:bg-slate-800 text-blue-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer"
-                                title="Sinh nhận xét AI Giữa HK I"
+                                className="absolute right-1 top-1 p-1 bg-white/95 text-blue-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer border border-blue-200"
+                                title={`Tự động đưa ra Đánh giá & Nhận xét AI Giữa HK I (Mức ${lvl1})`}
                               >
-                                <Sparkles className="w-3 h-3" />
+                                <Sparkles className="w-3 h-3 text-amber-500" />
                               </button>
                             )}
                           </div>
                         </td>
 
-                        {/* Score HK1 */}
+                        {/* 2. Cuối HK I - Điểm HK1 */}
                         <td className="py-2 px-1 text-center">
                           <input
                             type="text"
@@ -1247,69 +1662,105 @@ export function ScoresManager({
                             placeholder="-"
                             readOnly={readOnly}
                             disabled={readOnly}
-                            className={`w-12 px-1 py-1 text-center font-bold text-xs rounded border ${
-                              readOnly
-                                ? 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-amber-600'
+                            className={`w-11 px-1 py-1 text-center font-black text-xs rounded border border-slate-300 bg-white text-black shadow-xs ${
+                              readOnly ? 'opacity-70 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-amber-500'
                             }`}
                           />
                         </td>
 
-                        {/* 2. Cuối HK I */}
-                        <td className="py-2 px-2">
+                        {/* 2. Cuối HK I - Đánh giá T, H, C */}
+                        <td className="py-2 px-1 text-center">
+                          <select
+                            value={lvl2}
+                            disabled={readOnly}
+                            onChange={(e) => handleLevelChange(student.id, 'Cuối học kỳ I', e.target.value as EvaluationLevel)}
+                            className={`w-12 py-1 text-center font-black text-xs rounded-lg border outline-none cursor-pointer ${
+                              lvl2 === 'T'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-black'
+                                : lvl2 === 'H'
+                                ? 'bg-blue-50 text-blue-800 border-blue-300 font-black'
+                                : 'bg-amber-50 text-amber-800 border-amber-300 font-black'
+                            }`}
+                            title={`Mức đánh giá Cuối HK I: ${lvl2} (Tự động từ dữ liệu: ${autoLvl2})`}
+                          >
+                            <option value="T">T</option>
+                            <option value="H">H</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+
+                        {/* 2. Cuối HK I - Lời nhận xét: Chữ đen trên nền trắng */}
+                        <td className="py-2 px-1.5">
                           <div className="relative group">
                             <textarea
                               value={commentMap['Cuối học kỳ I'] || ''}
                               onChange={(e) => handleCommentChange(student.id, 'Cuối học kỳ I', e.target.value)}
-                              placeholder={readOnly ? (commentMap['Cuối học kỳ I'] || '-') : "Nhận xét Cuối HK1..."}
+                              placeholder={readOnly ? (commentMap['Cuối học kỳ I'] || '-') : `Nhận xét Cuối HK1 (${lvl2})...`}
                               readOnly={readOnly}
-                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border leading-tight ${
-                                readOnly 
-                                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-default' 
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500'
+                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border border-slate-300 bg-white text-black font-medium placeholder:text-slate-400 shadow-inner leading-tight ${
+                                readOnly ? 'opacity-80 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-amber-500'
                               }`}
                             />
                             {!readOnly && (
                               <button
                                 type="button"
                                 onClick={() => handleGenerateAIForStudent(student.id, 'Cuối học kỳ I')}
-                                className="absolute right-1 top-1 p-1 bg-white/90 dark:bg-slate-800 text-amber-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer"
-                                title="Sinh nhận xét AI Cuối HK I"
+                                className="absolute right-1 top-1 p-1 bg-white/95 text-amber-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer border border-amber-200"
+                                title={`Tự động đưa ra Đánh giá & Nhận xét AI Cuối HK I (Mức ${lvl2})`}
                               >
-                                <Sparkles className="w-3 h-3" />
+                                <Sparkles className="w-3 h-3 text-amber-500" />
                               </button>
                             )}
                           </div>
                         </td>
 
-                        {/* 3. Giữa HK II */}
-                        <td className="py-2 px-2">
+                        {/* 3. Giữa HK II - Đánh giá T, H, C */}
+                        <td className="py-2 px-1 text-center">
+                          <select
+                            value={lvl3}
+                            disabled={readOnly}
+                            onChange={(e) => handleLevelChange(student.id, 'Giữa học kỳ II', e.target.value as EvaluationLevel)}
+                            className={`w-12 py-1 text-center font-black text-xs rounded-lg border outline-none cursor-pointer ${
+                              lvl3 === 'T'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-black'
+                                : lvl3 === 'H'
+                                ? 'bg-blue-50 text-blue-800 border-blue-300 font-black'
+                                : 'bg-amber-50 text-amber-800 border-amber-300 font-black'
+                            }`}
+                            title={`Mức đánh giá Giữa HK II: ${lvl3} (Tự động từ dữ liệu: ${autoLvl3})`}
+                          >
+                            <option value="T">T</option>
+                            <option value="H">H</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+
+                        {/* 3. Giữa HK II - Lời nhận xét: Chữ đen trên nền trắng */}
+                        <td className="py-2 px-1.5">
                           <div className="relative group">
                             <textarea
                               value={commentMap['Giữa học kỳ II'] || ''}
                               onChange={(e) => handleCommentChange(student.id, 'Giữa học kỳ II', e.target.value)}
-                              placeholder={readOnly ? (commentMap['Giữa học kỳ II'] || '-') : "Nhận xét Giữa HK2..."}
+                              placeholder={readOnly ? (commentMap['Giữa học kỳ II'] || '-') : `Nhận xét Giữa HK2 (${lvl3})...`}
                               readOnly={readOnly}
-                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border leading-tight ${
-                                readOnly 
-                                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-default' 
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500'
+                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border border-slate-300 bg-white text-black font-medium placeholder:text-slate-400 shadow-inner leading-tight ${
+                                readOnly ? 'opacity-80 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-indigo-500'
                               }`}
                             />
                             {!readOnly && (
                               <button
                                 type="button"
                                 onClick={() => handleGenerateAIForStudent(student.id, 'Giữa học kỳ II')}
-                                className="absolute right-1 top-1 p-1 bg-white/90 dark:bg-slate-800 text-indigo-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer"
-                                title="Sinh nhận xét AI Giữa HK II"
+                                className="absolute right-1 top-1 p-1 bg-white/95 text-indigo-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer border border-indigo-200"
+                                title={`Tự động đưa ra Đánh giá & Nhận xét AI Giữa HK II (Mức ${lvl3})`}
                               >
-                                <Sparkles className="w-3 h-3" />
+                                <Sparkles className="w-3 h-3 text-amber-500" />
                               </button>
                             )}
                           </div>
                         </td>
 
-                        {/* Score HK2 */}
+                        {/* 4. Cuối HK II - Điểm HK2 */}
                         <td className="py-2 px-1 text-center">
                           <input
                             type="text"
@@ -1318,43 +1769,60 @@ export function ScoresManager({
                             placeholder="-"
                             readOnly={readOnly}
                             disabled={readOnly}
-                            className={`w-12 px-1 py-1 text-center font-bold text-xs rounded border ${
-                              readOnly
-                                ? 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-emerald-600'
+                            className={`w-11 px-1 py-1 text-center font-black text-xs rounded border border-slate-300 bg-white text-black shadow-xs ${
+                              readOnly ? 'opacity-70 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-emerald-500'
                             }`}
                           />
                         </td>
 
-                        {/* 4. Cuối HK II */}
-                        <td className="py-2 px-2">
+                        {/* 4. Cuối HK II - Đánh giá T, H, C */}
+                        <td className="py-2 px-1 text-center">
+                          <select
+                            value={lvl4}
+                            disabled={readOnly}
+                            onChange={(e) => handleLevelChange(student.id, 'Cuối học kỳ II', e.target.value as EvaluationLevel)}
+                            className={`w-12 py-1 text-center font-black text-xs rounded-lg border outline-none cursor-pointer ${
+                              lvl4 === 'T'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-black'
+                                : lvl4 === 'H'
+                                ? 'bg-blue-50 text-blue-800 border-blue-300 font-black'
+                                : 'bg-amber-50 text-amber-800 border-amber-300 font-black'
+                            }`}
+                            title={`Mức đánh giá Cuối HK II: ${lvl4} (Tự động từ dữ liệu: ${autoLvl4})`}
+                          >
+                            <option value="T">T</option>
+                            <option value="H">H</option>
+                            <option value="C">C</option>
+                          </select>
+                        </td>
+
+                        {/* 4. Cuối HK II - Lời nhận xét: Chữ đen trên nền trắng */}
+                        <td className="py-2 px-1.5">
                           <div className="relative group">
                             <textarea
                               value={commentMap['Cuối học kỳ II'] || ''}
                               onChange={(e) => handleCommentChange(student.id, 'Cuối học kỳ II', e.target.value)}
-                              placeholder={readOnly ? (commentMap['Cuối học kỳ II'] || '-') : "Nhận xét Cuối HK2..."}
+                              placeholder={readOnly ? (commentMap['Cuối học kỳ II'] || '-') : `Nhận xét Cuối HK2 (${lvl4})...`}
                               readOnly={readOnly}
-                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border leading-tight ${
-                                readOnly 
-                                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-default' 
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500'
+                              className={`w-full h-14 p-1.5 text-[11px] rounded-lg border border-slate-300 bg-white text-black font-medium placeholder:text-slate-400 shadow-inner leading-tight ${
+                                readOnly ? 'opacity-80 cursor-default' : 'focus:outline-none focus:ring-1 focus:ring-emerald-500'
                               }`}
                             />
                             {!readOnly && (
                               <button
                                 type="button"
                                 onClick={() => handleGenerateAIForStudent(student.id, 'Cuối học kỳ II')}
-                                className="absolute right-1 top-1 p-1 bg-white/90 dark:bg-slate-800 text-emerald-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer"
-                                title="Sinh nhận xét AI Cuối HK II"
+                                className="absolute right-1 top-1 p-1 bg-white/95 text-emerald-600 rounded shadow-xs text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer border border-emerald-200"
+                                title={`Tự động đưa ra Đánh giá & Nhận xét AI Cuối HK II (Mức ${lvl4})`}
                               >
-                                <Sparkles className="w-3 h-3" />
+                                <Sparkles className="w-3 h-3 text-amber-500" />
                               </button>
                             )}
                           </div>
                         </td>
 
                         {/* Save Entire Row */}
-                        <td className="py-2 px-2 text-center">
+                        <td className="py-2 px-1.5 text-center">
                           {readOnly ? (
                             <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-750 px-2 py-1 rounded">
                               Chỉ xem
@@ -1364,7 +1832,7 @@ export function ScoresManager({
                               type="button"
                               onClick={() => handleSaveStudentRow(student.id)}
                               className="p-2 bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white dark:bg-slate-700 dark:hover:bg-blue-600 dark:text-slate-200 rounded-lg text-xs font-bold transition-all cursor-pointer inline-flex items-center justify-center"
-                              title="Lưu tất cả điểm và nhận xét của học sinh này"
+                              title="Lưu đánh giá T/H/C, điểm và nhận xét của học sinh này"
                             >
                               <Save className="w-3.5 h-3.5" />
                             </button>

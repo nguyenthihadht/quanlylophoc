@@ -59,6 +59,8 @@ export interface Assessment {
   isAbsent?: boolean; // Đánh dấu học sinh vắng tiết học
 }
 
+export type EvaluationLevel = 'T' | 'H' | 'C';
+
 export interface Comment {
   id: string;
   studentId: string;
@@ -67,6 +69,7 @@ export interface Comment {
   date: string;
   type: 'AI' | 'Thủ công';
   period?: 'Giữa học kỳ I' | 'Cuối học kỳ I' | 'Giữa học kỳ II' | 'Cuối học kỳ II' | string;
+  level?: EvaluationLevel;
 }
 
 export interface SemesterScore {
@@ -96,6 +99,7 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   adminPassword?: string;
   requirePassword?: boolean;
+  teacherPhoto?: string; // URL hoặc chuỗi Base64 ảnh cô giáo và học sinh
 }
 
 export interface WheelSpinRecord {

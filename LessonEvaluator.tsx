@@ -1031,14 +1031,14 @@ export function LessonEvaluator({
                             />
                           </td>
 
-                          {/* Student Info: Họ và tên học sinh nổi chữ màu đen và trên 1 hàng */}
+                          {/* Student Info: Họ và tên học sinh chữ trắng nổi bật trên nền tối / đen trên nền sáng */}
                           <td className="px-5 py-3.5 whitespace-nowrap min-w-[240px]">
                             <div className="flex items-center gap-2 whitespace-nowrap">
                               <span 
-                                className={`text-[15px] font-black tracking-tight whitespace-nowrap transition-colors ${
+                                className={`text-[15px] font-black tracking-tight whitespace-nowrap ${
                                   isAbsent 
-                                    ? 'line-through text-rose-600 dark:text-rose-400 font-bold' 
-                                    : 'text-black dark:text-white'
+                                    ? 'line-through text-rose-600 font-bold' 
+                                    : 'text-slate-900 dark:text-white'
                                 }`}
                               >
                                 {s.name}
