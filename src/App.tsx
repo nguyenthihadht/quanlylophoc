@@ -326,7 +326,7 @@ export default function App() {
       case 'diaries': return 'Nhật ký dạy học';
       case 'portfolio': return 'Hồ sơ học tập học sinh';
       case 'stats': return 'Báo cáo & Thống kê';
-      case 'scores': return 'Ghi điểm & Học bạ';
+      case 'scores': return 'Ghi điểm và nhận xét';
       case 'settings': return 'Thiết lập & Sao lưu';
       default: return 'Sổ Liên Lạc';
     }
@@ -913,7 +913,7 @@ export default function App() {
               onClick={() => { setActiveTab('scores'); setIsSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === 'scores' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
-              <FileSpreadsheet className="w-4 h-4" /> Ghi điểm & Học bạ
+              <FileSpreadsheet className="w-4 h-4" /> Ghi điểm và nhận xét
             </button>
 
             <button
@@ -1211,8 +1211,8 @@ export default function App() {
               scores={scores}
               readOnly={isReadOnly}
               onAddOrUpdateScore={isReadOnly ? () => {} : (studentId, semester, score) => ClassTrackerAPI.addOrUpdateScore(studentId, semester, score)}
-              onGenerateAIComment={isReadOnly ? async () => { throw new Error('Chế độ xem không thể tạo nhận xét AI'); } : (studentId, period) => ClassTrackerAPI.generateAIComment(studentId, period)}
-              onAddComment={isReadOnly ? () => {} : (studentId, content, type, period) => ClassTrackerAPI.addComment(studentId, content, type, period)}
+              onGenerateAIComment={isReadOnly ? async () => { throw new Error('Chế độ xem không thể tạo nhận xét AI'); } : (studentId, period, level) => ClassTrackerAPI.generateAIComment(studentId, period, level)}
+              onAddComment={isReadOnly ? () => {} : (studentId, content, type, period, level) => ClassTrackerAPI.addComment(studentId, content, type, period, level)}
             />
           )}
 

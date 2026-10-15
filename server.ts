@@ -166,7 +166,8 @@ async function startServer() {
         notes,
         currentTimelineWeek = null,
         timeline = [],
-        period // "Giữa học kỳ I", "Cuối học kỳ I", "Giữa học kỳ II", "Cuối học kỳ II"
+        period, // "Giữa học kỳ I", "Cuối học kỳ I", "Giữa học kỳ II", "Cuối học kỳ II"
+        level // 'T' | 'H' | 'C'
       } = req.body;
 
       if (!studentName) {
@@ -176,107 +177,107 @@ async function startServer() {
       const isTech = (subject || '').toLowerCase().includes('công nghệ');
       const subjectNameDisplay = isTech ? 'Công nghệ' : 'Tin học';
 
+      const getPositiveFallback = () => {
+        if (level === 'T' || (!level && completionStats.excellent > completionStats.completed)) {
+          if (period === 'Giữa học kỳ I') {
+            return `Em ${studentName} chăm ngoan, tiếp thu bài nhanh, làm quen với môn ${subjectNameDisplay} rất tốt và luôn tích cực trong giờ học.`;
+          } else if (period === 'Cuối học kỳ I') {
+            return `Em ${studentName} chăm ngoan, hoàn thành xuất sắc các bài thực hành môn ${subjectNameDisplay} học kỳ I, tích cực phát biểu xây dựng bài.`;
+          } else if (period === 'Giữa học kỳ II') {
+            return `Em ${studentName} có nhiều tiến bộ, thao tác máy tính nhanh nhẹn, sáng tạo và luôn hào hứng trong các tiết học ${subjectNameDisplay}.`;
+          } else if (period === 'Cuối học kỳ II') {
+            return `Em ${studentName} hoàn thành xuất sắc chương trình môn ${subjectNameDisplay}, kỹ năng thực hành vững vàng, chăm chỉ và tự giác rèn luyện.`;
+          }
+          return `Em ${studentName} chăm ngoan, tiếp thu bài nhanh, hoàn thành xuất sắc các bài thực hành và luôn tích cực trong giờ học.`;
+        } else if (level === 'C') {
+          // Positive and encouraging, ABSOLUTELY NO CRITICIZING
+          if (period === 'Giữa học kỳ I') {
+            return `Em ${studentName} ngoan ngoãn, có nhiều cố gắng làm quen môn ${subjectNameDisplay}, chú ý nghe giảng. Hãy tự tin phát huy nhé!`;
+          } else if (period === 'Cuối học kỳ I') {
+            return `Em ${studentName} chăm ngoan, luôn nỗ lực trong các tiết thực hành môn ${subjectNameDisplay}. Em hãy tiếp tục cố gắng hơn nữa nhé!`;
+          } else if (period === 'Giữa học kỳ II') {
+            return `Em ${studentName} có tiến bộ trong học tập, chăm chỉ nghe giảng và thực hành. Hãy tự tin tương tác nhiều hơn nhé!`;
+          } else if (period === 'Cuối học kỳ II') {
+            return `Em ${studentName} ngoan ngoãn, hoàn thành bài học và luôn có ý thức rèn luyện môn ${subjectNameDisplay}. Tiếp tục cố gắng em nhé!`;
+          }
+          return `Em ${studentName} chăm ngoan, có nhiều cố gắng trong học tập, chú ý nghe giảng. Hãy tự tin phát huy hơn nữa nhé!`;
+        } else {
+          // Level H (Hoàn thành)
+          if (period === 'Giữa học kỳ I') {
+            return `Em ${studentName} chăm ngoan, nề nếp học tập tốt, hoàn thành đầy đủ các bài thực hành môn ${subjectNameDisplay} đầu năm.`;
+          } else if (period === 'Cuối học kỳ I') {
+            return `Em ${studentName} nắm vững kiến thức môn ${subjectNameDisplay}, hoàn thành tốt các bài thực hành trên lớp. Tiếp tục phát huy nhé!`;
+          } else if (period === 'Giữa học kỳ II') {
+            return `Em ${studentName} tiếp thu bài tốt, chăm chỉ thực hành môn ${subjectNameDisplay} và tích cực tham gia các hoạt động nhóm.`;
+          } else if (period === 'Cuối học kỳ II') {
+            return `Em ${studentName} hoàn thành tốt nội dung chương trình môn ${subjectNameDisplay}, kỹ năng thực hành đạt chuẩn, chăm ngoan, lễ phép.`;
+          }
+          return `Em ${studentName} chăm ngoan, chú ý nghe giảng, nắm vững kiến thức và hoàn thành tốt các bài thực hành trên lớp.`;
+        }
+      };
+
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        // Return a mock AI comment tailored to the specific period to make the app still incredibly graceful and functional
-        const scoreStr = scores && scores.length > 0 
-          ? ` (Điểm thi: ${scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ')})`
-          : '';
-        const lessonsStr = totalLessonsEvaluated > 0 
-          ? `Qua ${totalLessonsEvaluated} tiết học thực hành, ` 
-          : '';
-        
-        let processDescription = '';
-        if (completionStats.excellent > completionStats.completed) {
-          processDescription = isTech 
-            ? `thực hành làm sản phẩm công nghệ rất khéo léo, sáng tạo và luôn hoàn thành xuất sắc nhiệm vụ.`
-            : `thao tác máy tính rất nhanh nhẹn, luôn dẫn đầu lớp và hoàn thành xuất sắc các sản phẩm học tập.`;
-        } else {
-          processDescription = isTech
-            ? `tiếp thu tốt kiến thức công nghệ đời sống, hoàn thành đầy đủ các bài thực hành và an toàn khi sử dụng thiết bị.`
-            : `tiếp thu bài tốt, hoàn thành đầy đủ nội dung bài học và thực hành nghiêm túc.`;
-        }
-
-        let finalComment = '';
-        if (period === 'Giữa học kỳ I') {
-          finalComment = `Em ${studentName} làm quen với môn ${subjectNameDisplay} rất tốt, ${processDescription} Giờ học luôn chú ý nghe giảng, có thái độ học tập tích cực, tự tin bước đầu.`;
-        } else if (period === 'Cuối học kỳ I') {
-          finalComment = `Học kỳ I vừa qua, em ${studentName} đạt kết quả tốt môn ${subjectNameDisplay}, ${processDescription} Thái độ học tập chuyên cần, có tinh thần tương tác tốt${scoreStr}.`;
-        } else if (period === 'Giữa học kỳ II') {
-          finalComment = `Em ${studentName} thể hiện tiến bộ rõ rệt trong nửa đầu kỳ II môn ${subjectNameDisplay}, ${processDescription} Em rất hào hứng khi tìm hiểu các chủ đề mới và luôn nỗ lực thực hành sáng tạo.`;
-        } else if (period === 'Cuối học kỳ II') {
-          finalComment = `Tổng kết cả năm học, em ${studentName} hoàn thành tốt chương trình môn ${subjectNameDisplay} lớp ${className}, ${processDescription} Kỹ năng thực hành vững vàng, tư duy tốt và luôn chăm chỉ rèn luyện${scoreStr}.`;
-        } else {
-          // General fallback
-          finalComment = `Em ${studentName} học lớp ${className} có ý thức học tập tốt môn ${subjectNameDisplay}, ${processDescription} Kỹ năng thực hành đạt chuẩn kiến thức kỹ năng, chăm ngoan và tích cực đóng góp xây dựng bài${scoreStr}.`;
-        }
-
-        return res.json({ comment: finalComment, isMock: true });
+        return res.json({ comment: getPositiveFallback(), level: level || 'H', isMock: true });
       }
 
-      // Initialize GoogleGenAI SDK
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
+      try {
+        // Initialize GoogleGenAI SDK
+        const ai = new GoogleGenAI({
+          apiKey: apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            }
           }
-        }
-      });
+        });
 
-      // Construct a highly detailed and context-aware prompt for Gemini 3.5 Flash
-      const prompt = `Bạn là một giáo viên dạy bộ môn ${subjectNameDisplay} Tiểu học có tâm, am hiểu tâm lý trẻ em và biết cách nhận xét học bạ chuẩn mực theo Thông tư giáo dục tiểu học Việt Nam (Thông tư 27).
-Hãy sinh ra một lời nhận xét học kỳ hoặc thời điểm cụ thể, ngắn gọn, súc tích (khoảng 2-4 câu) phù hợp với thời điểm của học sinh tiểu học sau đây:
+        // Construct prompt for Gemini
+        const levelLabel = level === 'T' ? 'T (Hoàn thành tốt)' : level === 'H' ? 'H (Hoàn thành)' : level === 'C' ? 'C (Chưa hoàn thành - Cần động viên khích lệ)' : 'Tự động tính từ quá trình';
+        const prompt = `Bạn là một giáo viên Tiểu học Việt Nam dạy môn ${subjectNameDisplay}, viết nhận xét học bạ học sinh theo Thông tư 27.
+YÊU CẦU ĐẶC BIỆT QUAN TRỌNG:
+1. ĐỘ DÀI: NGẮN GỌN, BẮT BUỘC DƯỚI 30 CHỮ (DƯỚI 30 TỪ). Khoảng 15 đến 25 từ là lý tưởng nhất.
+2. NỘI DUNG TÍCH CỰC, ĐỘNG VIÊN: Giọng văn ấm áp, khen ngợi sự tiến bộ, khích lệ tinh thần học tập của học sinh Tiểu học.
+3. TUYỆT ĐỐI KHÔNG CHÊ BAI HỌC SINH trong bất kỳ trường hợp nào. Ngay cả khi mức đánh giá là C hoặc điểm thi chưa cao, tuyệt đối không dùng từ tiêu cực; hãy ghi nhận sự cố gắng, chăm ngoan của em và khích lệ em tiếp tục rèn luyện.
+4. Bắt đầu bằng tên riêng: "Em ${studentName}..." để tạo sự gần gũi.
+5. Chỉ trả về DUY NHẤT lời nhận xét ngắn (dưới 30 chữ), không kèm theo định dạng Markdown, dấu ngoặc kép, tiêu đề hay lời dẫn giải nào.
 
 Thông tin học sinh:
-- Tên học sinh: ${studentName}
-- Môn học: ${subjectNameDisplay}
-- Khối lớp: ${gradeName}
+- Họ tên: ${studentName}
 - Lớp: ${className}
-- Các ghi chú đặc biệt từ giáo viên: ${notes || 'Chưa ghi chú'}
-- Điểm thi định kỳ học kỳ (nếu có): ${scores && scores.length > 0 ? scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ') : 'Chưa có điểm'}
+- Môn học: ${subjectNameDisplay}
+- Thời điểm đánh giá: ${period || 'Định kỳ'}
+- Mức đánh giá: ${levelLabel}
+- Điểm thi (nếu có): ${scores && scores.length > 0 ? scores.map((s: any) => `${s.semester}: ${s.score}/10`).join(', ') : 'Chưa có'}`;
 
-Thời điểm đánh giá được yêu cầu:
-- THỜI ĐIỂM CỤ THỂ: ${period || 'Nhận xét chung'}
-${currentTimelineWeek ? `- Đang ở tuần học thực tế: ${currentTimelineWeek.week} (Từ ngày ${currentTimelineWeek.startDate} đến ngày ${currentTimelineWeek.endDate}) thuộc ${currentTimelineWeek.semester}` : ''}
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+          config: {
+            temperature: 0.7,
+          }
+        });
 
-Thống kê quá trình học tập thực tế (Đồng bộ từ hệ thống quản lý học tập):
-- Tổng số buổi học được đánh giá trước đó: ${totalLessonsEvaluated} buổi học
-- Kết quả hoàn thành bài thực hành: ${completionStats.excellent} buổi đạt loại Xuất sắc/Hoàn thành tốt, ${completionStats.completed} buổi Hoàn thành, ${completionStats.notCompleted} buổi Chưa hoàn thành.
-- Tinh thần thái độ học tập: ${attitudeStats.positive} buổi Tích cực, ${attitudeStats.normal} buổi Bình thường, ${attitudeStats.needsImprovement} buổi Cần cố gắng.
-- Sự phát triển kỹ năng máy tính: ${skillStats.proficient} buổi Thành thạo, ${skillStats.passed} buổi Đạt yêu cầu, ${skillStats.needsImprovement} buổi Chưa đạt.
-- Kỹ năng tương tác, làm việc nhóm: ${cooperationStats.good} buổi Tốt, ${cooperationStats.passed} buổi Đạt, ${cooperationStats.needsImprovement} buổi Cần cố gắng thêm.
-
-Danh sách đánh giá chi tiết của các buổi học gần đây nhất:
-${JSON.stringify(assessments, null, 2)}
-
-Yêu cầu nhận xét:
-1. Nhận xét bằng tiếng Việt, giọng điệu ấm áp, mang tính xây dựng và động viên học sinh Tiểu học nhưng phải cực kỳ chính xác dựa trên DỮ LIỆU THỰC TẾ TRÊN.
-2. PHẢI PHÙ HỢP HOÀN TOÀN VỚI THỜI ĐIỂM ĐÁNH GIÁ ĐƯỢC CHỌN:
-   - Nếu thời điểm đánh giá là "Giữa học kỳ I", hãy nhận xét tập trung khen ngợi nỗ lực làm quen máy tính bước đầu, tư thế ngồi, cách đặt tay lên hàng phím và thái độ nề nếp học tập trong 10 tuần đầu. KHÔNG nhắc tới điểm thi cuối học kỳ.
-   - Nếu thời điểm đánh giá là "Cuối học kỳ I", hãy tổng kết toàn diện kết quả học tập kỳ 1, kỹ năng sử dụng máy tính, thực hành, thái độ và kết hợp nhận xét với điểm số thi học kỳ I (nếu có).
-   - Nếu thời điểm đánh giá là "Giữa học kỳ II", tập trung vào tiến trình học tập của nửa đầu kỳ 2 (như bắt đầu làm quen với lập trình trực quan Scratch hoặc thiết kế trình chiếu PowerPoint, thái độ chủ động thực hành), không nhắc tới điểm thi.
-   - Nếu thời điểm đánh giá là "Cuối học kỳ II" (hoặc cuối năm), tổng kết toàn bộ quá trình, sự tiến bộ vượt bậc sau một năm rèn luyện kỹ năng thực hành Tin học (gõ phím, sử dụng phần mềm, tư duy Scratch/PowerPoint) và nhận xét đối chiếu với điểm thi học kỳ II (nếu có).
-3. PHẢI ĐỐI CHIẾU rõ giữa:
-   - Tổng số buổi học tham gia đánh giá (${totalLessonsEvaluated} buổi) để nhận xét về độ chuyên cần và quá trình rèn luyện.
-   - Điểm số thi học kỳ (nếu có): Khen ngợi nếu điểm cao tương xứng với quá trình rèn luyện chăm chỉ; động viên cố gắng nếu điểm thi chưa đạt kỳ vọng dù quá trình học tốt, hoặc chỉ ra sự tập trung chưa đều nếu điểm thi thấp và quá trình nhiều buổi chưa hoàn thành.
-4. Không được máy móc hay rập khuôn chung chung. Hãy dùng tên riêng "${studentName}" để nhận xét gần gũi.
-5. Độ dài giới hạn nghiêm ngặt từ 40 đến 80 từ, phù hợp để lưu trữ trong học bạ số hoặc hệ thống liên lạc điện tử.
-6. Trả về TRỰC TIẾP văn bản nhận xét kết quả, không viết thêm bất kỳ định dạng Markdown hay lời dẫn/kết, lời thưa gửi nào khác.`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: prompt,
-        config: {
-          temperature: 0.7,
+        let generatedComment = response.text ? response.text.trim().replace(/^["'“”]+|["'“”]+$/g, '') : '';
+        
+        // Safety check: ensure under 30 words
+        const words = generatedComment.split(/\s+/).filter(Boolean);
+        if (words.length > 30) {
+          generatedComment = words.slice(0, 28).join(' ') + '...';
         }
-      });
 
-      const generatedComment = response.text ? response.text.trim() : '';
-      res.json({ comment: generatedComment, isMock: false });
-    } catch (error: any) {
-      console.error('Gemini API call failed:', error);
-      res.status(500).json({ error: error?.message || 'Failed to generate AI comment' });
+        if (!generatedComment) {
+          generatedComment = getPositiveFallback();
+        }
+
+        return res.json({ comment: generatedComment, level: level || 'H', isMock: false });
+      } catch (geminiError: any) {
+        console.warn('Gemini API call returned warning, using high-quality positive fallback:', geminiError?.message);
+        return res.json({ comment: getPositiveFallback(), level: level || 'H', isMock: true });
+      }
+    } catch (outerError: any) {
+      console.error('API endpoint error:', outerError);
+      res.status(500).json({ error: outerError?.message || 'Server error' });
     }
   });
 
