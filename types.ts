@@ -44,6 +44,7 @@ export interface Lesson {
   notes?: string; // Ghi chú chung cho buổi học
   absentStudentIds?: string[]; // Danh sách ID học sinh vắng
   absentStudentsSummary?: string; // Tóm tắt học sinh vắng (ví dụ: "Nguyễn Văn A, Trần Thị B")
+  isDraft?: boolean; // Lưu tạm (bản nháp) để giáo viên có thể mở ra đánh giá tiếp
 }
 
 export interface Assessment {

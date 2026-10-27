@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Calendar, CheckSquare, Sparkles, UserCheck, UserX, 
   ChevronRight, ChevronLeft, ChevronDown, Save, ArrowLeft, RotateCcw, 
-  Layers, School, Check, ArrowRight
+  Layers, School, Check, ArrowRight, BookmarkCheck, Clock, FileEdit, Trash2
 } from 'lucide-react';
 import { Class, Student, Lesson, Assessment, TimelineWeek, Grade } from '../types';
 import { TIN_HOC_3_CURRICULUM, TIN_HOC_4_CURRICULUM, CONG_NGHE_5_CURRICULUM } from '../lib/curriculumData';
@@ -28,7 +28,27 @@ interface LessonEvaluatorProps {
     date: string, 
     assessments: Omit<Assessment, 'id' | 'lessonId' | 'date'>[]
   ) => void;
+  onSaveLessonWithAssessments?: (
+    lessonData: {
+      id?: string;
+      classId: string;
+      lessonName: string;
+      content: string;
+      date: string;
+      createdBy?: string;
+      week?: string;
+      notes?: string;
+      absentStudentIds?: string[];
+      absentStudentsSummary?: string;
+      isDraft?: boolean;
+    },
+    assessments: Omit<Assessment, 'id' | 'lessonId' | 'date'>[]
+  ) => Lesson;
   onAddLesson: (lesson: Omit<Lesson, 'id'>) => Lesson;
+  onUpdateLesson?: (id: string, updatedFields: Partial<Omit<Lesson, 'id'>>) => void;
+  onDeleteLesson?: (id: string) => void;
+  initialResumeLessonId?: string | null;
+  onClearResumeLessonId?: () => void;
 }
 
 export function LessonEvaluator({
@@ -40,7 +60,12 @@ export function LessonEvaluator({
   timeline,
   readOnly = false,
   onSaveAssessments,
-  onAddLesson
+  onSaveLessonWithAssessments,
+  onAddLesson,
+  onUpdateLesson,
+  onDeleteLesson,
+  initialResumeLessonId,
+  onClearResumeLessonId
 }: LessonEvaluatorProps) {
   // STRICT STEP ARCHITECTURE:
   // selectedGradeId === null -> BƯỚC 1: CHỌN KHỐI (Không hiển thị danh sách lớp)
@@ -48,6 +73,8 @@ export function LessonEvaluator({
   // selectedGradeId !== null && selectedClassId !== null -> BƯỚC 3: PHIẾU ĐÁNH GIÁ TIẾT HỌC & ĐIỂM DANH
   const [selectedGradeId, setSelectedGradeId] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [lessonDate, setLessonDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   // If the selected grade is no longer valid, reset to Step 1
   useEffect(() => {
@@ -193,11 +220,14 @@ export function LessonEvaluator({
   const handleBackToGrades = () => {
     setSelectedGradeId(null);
     setSelectedClassId(null);
+    setEditingLessonId(null);
   };
 
   // Hành động chọn Lớp (Bước 2 -> Bước 3)
   const handleSelectClass = (classId: string) => {
     setSelectedClassId(classId);
+    setEditingLessonId(null);
+    setLessonDate(new Date().toISOString().split('T')[0]);
     const filtered = students.filter(s => s.classId === classId);
     setClassStudents(filtered);
     setSelectedStudentIds(filtered.map(s => s.id));
@@ -226,7 +256,76 @@ export function LessonEvaluator({
   // Nút quay lại: Chọn lại lớp (Bước 3 -> Bước 2)
   const handleBackToClasses = () => {
     setSelectedClassId(null);
+    setEditingLessonId(null);
   };
+
+  // Mở một tiết học (đặc biệt là tiết lưu tạm) để tiếp tục đánh giá
+  const handleResumeLesson = (lesson: Lesson) => {
+    const targetClass = classes.find(c => c.id === lesson.classId);
+    if (!targetClass) {
+      setNotification('Không tìm thấy lớp học của bài giảng này.');
+      setTimeout(() => setNotification(''), 3000);
+      return;
+    }
+    const targetGrade = grades.find(g => g.id === targetClass.gradeId);
+    setSelectedGradeId(targetGrade?.id || targetClass.gradeId);
+    setSelectedClassId(targetClass.id);
+    setEditingLessonId(lesson.id);
+    setLessonDate(lesson.date || new Date().toISOString().split('T')[0]);
+    setLessonName(lesson.lessonName);
+    setLessonContent(lesson.content || '');
+    
+    // Khôi phục tuần học
+    if (lesson.week) {
+      const match = lesson.week.match(/\d+/);
+      if (match) setSelectedWeek(parseInt(match[0], 10));
+    }
+
+    const filtered = students.filter(s => s.classId === targetClass.id);
+    setClassStudents(filtered);
+    setSelectedStudentIds(filtered.map(s => s.id));
+    setAbsentStudentIds(lesson.absentStudentIds || []);
+
+    // Nạp lại các đánh giá đã lưu trước đó của tiết học
+    const existing = assessments.filter(a => a.lessonId === lesson.id);
+    const initial: typeof tempAssessments = {};
+    filtered.forEach(s => {
+      const found = existing.find(a => a.studentId === s.id);
+      if (found) {
+        initial[s.id] = {
+          completion: found.completion,
+          attitude: found.attitude,
+          skill: found.skill,
+          cooperation: found.cooperation,
+          note: found.note || ''
+        };
+      } else {
+        const isAbsent = (lesson.absentStudentIds || []).includes(s.id);
+        initial[s.id] = {
+          completion: isAbsent ? 'Chưa hoàn thành' : 'Hoàn thành',
+          attitude: 'Bình thường',
+          skill: isAbsent ? 'Cần hỗ trợ' : 'Đạt',
+          cooperation: isAbsent ? 'Cần cố gắng' : 'Đạt',
+          note: isAbsent ? 'Vắng học' : ''
+        };
+      }
+    });
+    setTempAssessments(initial);
+
+    setNotification(`⚡ Đã mở lại tiết học "${lesson.lessonName}" (Lớp ${targetClass.name}) để tiếp tục đánh giá!`);
+    setTimeout(() => setNotification(''), 3500);
+  };
+
+  // Tự động mở bài giảng khi nhận initialResumeLessonId
+  useEffect(() => {
+    if (initialResumeLessonId && lessons.length > 0) {
+      const targetLesson = lessons.find(l => l.id === initialResumeLessonId);
+      if (targetLesson) {
+        handleResumeLesson(targetLesson);
+        onClearResumeLessonId?.();
+      }
+    }
+  }, [initialResumeLessonId, lessons]);
 
   // Đánh dấu nhanh học sinh vắng / có mặt
   const handleToggleAbsent = (studentId: string) => {
@@ -314,39 +413,34 @@ export function LessonEvaluator({
     }));
   };
 
-  // Lưu bài giảng và toàn bộ đánh giá học sinh
-  const handleSaveAll = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Lưu bài giảng (lưu tạm hoặc lưu chính thức) và toàn bộ đánh giá học sinh
+  const handleSaveLesson = (isDraft: boolean) => {
     if (readOnly) {
       setNotification('🔒 Bạn đang ở Chế độ Xem tham khảo dành cho Đồng nghiệp — Chức năng lưu tiết học không khả dụng để bảo toàn dữ liệu.');
       setTimeout(() => setNotification(''), 4000);
       return;
     }
-    if (!selectedClassId || !lessonName.trim() || classStudents.length === 0) return;
 
-    const todayDate = new Date().toISOString().split('T')[0];
+    const studentsToAssess = classStudents.length > 0 
+      ? classStudents 
+      : students.filter(s => s.classId === selectedClassId);
 
-    const absentStudents = classStudents.filter(s => absentStudentIds.includes(s.id));
+    if (!selectedClassId || !lessonName.trim() || studentsToAssess.length === 0) {
+      setNotification('Vui lòng chọn lớp và nhập tên bài học trước khi lưu.');
+      setTimeout(() => setNotification(''), 3000);
+      return;
+    }
+
+    const todayDate = lessonDate || new Date().toISOString().split('T')[0];
+
+    const absentStudents = studentsToAssess.filter(s => absentStudentIds.includes(s.id));
     const absentSummary = absentStudents.map(s => s.name).join(', ');
     const attendanceNote = absentStudents.length > 0 
-      ? `Sĩ số: ${classStudents.length} · Có mặt: ${classStudents.length - absentStudents.length} · Vắng (${absentStudents.length}): ${absentSummary}`
-      : `Sĩ số: ${classStudents.length} (Đầy đủ)`;
+      ? `Sĩ số: ${studentsToAssess.length} · Có mặt: ${studentsToAssess.length - absentStudents.length} · Vắng (${absentStudents.length}): ${absentSummary}`
+      : `Sĩ số: ${studentsToAssess.length} (Đầy đủ)`;
 
-    // 1. Tạo và lưu nhật ký bài giảng (Lesson) với thông tin điểm danh
-    const newLesson = onAddLesson({
-      date: todayDate,
-      classId: selectedClassId,
-      lessonName: lessonName.trim(),
-      content: lessonContent.trim() || `Bài giảng Tuần ${selectedWeek}`,
-      createdBy: 'Cô Nguyễn Thị Hà',
-      week: `Tuần ${selectedWeek}`,
-      notes: attendanceNote,
-      absentStudentIds,
-      absentStudentsSummary: absentSummary
-    });
-
-    // 2. Chuẩn bị và lưu danh sách đánh giá của từng học sinh
-    const assessmentList = classStudents.map(s => {
+    // Chuẩn bị danh sách đánh giá của từng học sinh
+    const assessmentList = studentsToAssess.map(s => {
       const isAbsent = absentStudentIds.includes(s.id);
       return {
         studentId: s.id,
@@ -361,17 +455,59 @@ export function LessonEvaluator({
       };
     });
 
-    onSaveAssessments(newLesson.id, todayDate, assessmentList);
+    const lessonData = {
+      id: editingLessonId || undefined,
+      date: todayDate,
+      classId: selectedClassId,
+      lessonName: lessonName.trim(),
+      content: lessonContent.trim() || `Bài giảng Tuần ${selectedWeek}`,
+      createdBy: 'Cô Nguyễn Thị Hà',
+      week: `Tuần ${selectedWeek}`,
+      notes: attendanceNote,
+      absentStudentIds,
+      absentStudentsSummary: absentSummary,
+      isDraft: isDraft
+    };
 
-    // Hiển thị thông báo thành công và quay lại Bước 2 (chọn lớp)
-    setNotification(`Đã ghi nhận bài giảng Tuần ${selectedWeek} và toàn bộ đánh giá học sinh thành công!`);
-    setTimeout(() => {
-      setNotification('');
-      setSelectedClassId(null);
-      setLessonName('');
-      setLessonContent('');
-      setAbsentStudentIds([]);
-    }, 2200);
+    if (onSaveLessonWithAssessments) {
+      // ATOMIC WRITE: Saves lesson metadata and all student assessments simultaneously
+      const savedLesson = onSaveLessonWithAssessments(lessonData, assessmentList);
+      if (isDraft) {
+        setEditingLessonId(savedLesson.id);
+      }
+    } else {
+      // Fallback
+      let targetLessonId = editingLessonId;
+      if (editingLessonId) {
+        onUpdateLesson?.(editingLessonId, lessonData);
+      } else {
+        const newLesson = onAddLesson(lessonData);
+        targetLessonId = newLesson.id;
+        if (isDraft) {
+          setEditingLessonId(newLesson.id);
+        }
+      }
+      if (targetLessonId) {
+        onSaveAssessments(targetLessonId, todayDate, assessmentList);
+      }
+    }
+
+    const currentClassName = classes.find(c => c.id === selectedClassId)?.name || '';
+
+    if (isDraft) {
+      setNotification(`💾 Đã LƯU TẠM tiết học "${lessonName.trim()}" (Lớp ${currentClassName})! Thầy/Cô có thể tiếp tục đánh giá hoặc mở lại sau.`);
+      setTimeout(() => setNotification(''), 4500);
+    } else {
+      setNotification(`🎉 Đã LƯU CHÍNH THỨC bài giảng Tuần ${selectedWeek} và toàn bộ đánh giá học sinh thành công!`);
+      setTimeout(() => {
+        setNotification('');
+        setSelectedClassId(null);
+        setEditingLessonId(null);
+        setLessonName('');
+        setLessonContent('');
+        setAbsentStudentIds([]);
+      }, 2000);
+    }
   };
 
   // Sắp xếp danh sách khối lớp tự nhiên (Khối 3, Khối 4, Khối 5)
@@ -380,6 +516,7 @@ export function LessonEvaluator({
   const currentGrade = grades.find(g => g.id === selectedGradeId);
   const currentClass = classes.find(c => c.id === selectedClassId);
   const gradeClasses = selectedGradeId ? classes.filter(c => c.gradeId === selectedGradeId) : [];
+  const draftLessons = lessons.filter(l => l.isDraft);
 
   return (
     <div id="lesson-eval-container" className="space-y-6">
@@ -457,6 +594,92 @@ export function LessonEvaluator({
           </span>
         </div>
       </div>
+
+      {/* =========================================================================
+          TIẾT HỌC ĐANG LƯU TẠM (Hiển thị khi chưa vào Bước 3)
+      ========================================================================= */}
+      {draftLessons.length > 0 && selectedClassId === null && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-450/15 to-orange-500/10 dark:from-amber-950/40 dark:via-orange-950/30 dark:to-amber-950/40 border-2 border-amber-400 dark:border-amber-700/80 rounded-3xl p-5 shadow-sm space-y-3.5 animate-fadeIn">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-lg font-black shadow-xs shrink-0">
+                📝
+              </div>
+              <div>
+                <h3 className="text-base font-black text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                  <span>TIẾT HỌC ĐANG LƯU TẠM ({draftLessons.length})</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+                    Cần hoàn thành
+                  </span>
+                </h3>
+                <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-0.5">
+                  Thầy/Cô có {draftLessons.length} tiết học đã lưu tạm. Bấm <strong>"Đánh giá tiếp"</strong> để mở lại bảng điểm danh và tiếp tục chấm điểm.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+            {draftLessons.map(dl => {
+              const dClass = classes.find(c => c.id === dl.classId);
+              const dGrade = dClass ? grades.find(g => g.id === dClass.gradeId) : null;
+              const dAssessments = assessments.filter(a => a.lessonId === dl.id);
+              return (
+                <div key={dl.id} className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-amber-300/80 dark:border-amber-700/80 shadow-xs flex flex-col justify-between gap-3 hover:border-amber-500 dark:hover:border-amber-500 transition-all">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 text-xs font-black border border-blue-200 dark:border-blue-800">
+                        Lớp {dClass?.name || 'N/A'} {dGrade ? `(${dGrade.name})` : ''}
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-amber-500" /> {dl.date}
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-sm text-slate-850 dark:text-white line-clamp-1 mt-1">
+                      {dl.lessonName}
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {dl.week || 'Tuần học'} · Đã có <strong className="text-blue-600 dark:text-sky-400">{dAssessments.length}</strong> học sinh được ghi nhận
+                    </p>
+                    {dl.absentStudentIds && dl.absentStudentIds.length > 0 && (
+                      <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                        Vắng ({dl.absentStudentIds.length}): {dl.absentStudentsSummary || 'Có HS vắng'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-700/60">
+                    <button
+                      type="button"
+                      onClick={() => handleResumeLesson(dl)}
+                      className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs hover:scale-102"
+                    >
+                      <BookmarkCheck className="w-4 h-4" />
+                      <span>Đánh giá tiếp</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Bạn có chắc chắn muốn xóa bản lưu tạm của tiết học "${dl.lessonName}"?`)) {
+                            onDeleteLesson?.(dl.id);
+                          }
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
+                        title="Xóa bản lưu tạm này"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           BƯỚC 1: CHỌN KHỐI LỚP ĐÁNH GIÁ (Render khi selectedGradeId === null)
@@ -651,7 +874,7 @@ export function LessonEvaluator({
         /* =========================================================================
             BƯỚC 3: PHIẾU ĐÁNH GIÁ TIẾT HỌC & ĐIỂM DANH (Render khi selectedGradeId & selectedClassId)
         ========================================================================= */
-        <form onSubmit={handleSaveAll} className="space-y-6 animate-fadeIn">
+        <form onSubmit={(e) => { e.preventDefault(); handleSaveLesson(false); }} className="space-y-6 animate-fadeIn">
           
           {/* Header Action Row (Nền xanh đậm chữ trắng cho dễ quan sát) */}
           <div className="bg-gradient-to-r from-[#0b1e36] via-[#0f2444] to-[#15345a] text-white p-4.5 rounded-2xl border-2 border-sky-400 shadow-md flex flex-wrap items-center justify-between gap-3">
@@ -683,6 +906,41 @@ export function LessonEvaluator({
               </div>
             </div>
           </div>
+
+          {/* Banner thông báo khi đang mở bản LƯU TẠM */}
+          {editingLessonId && (
+            <div className="bg-gradient-to-r from-amber-500/15 via-orange-500/15 to-amber-500/10 border-2 border-amber-500/60 text-amber-200 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-xl bg-amber-500 text-slate-950 text-base font-black shadow-xs shrink-0">
+                  📝
+                </span>
+                <div>
+                  <p className="font-black text-sm text-amber-300 flex items-center gap-2">
+                    <span>ĐANG MỞ BẢN LƯU TẠM ĐỂ ĐÁNH GIÁ TIẾP</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-slate-950 uppercase">
+                      Bản nháp
+                    </span>
+                  </p>
+                  <p className="text-xs text-amber-100/90 mt-0.5">
+                    Bài: <strong>{lessonName}</strong> · Lớp: <strong>{currentClass?.name}</strong> · Ngày bắt đầu lưu: <strong>{lessonDate}</strong>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Thầy/Cô có muốn đóng bản lưu tạm này và quay lại danh sách lớp không?')) {
+                      handleBackToClasses();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-all border border-slate-650 cursor-pointer"
+                >
+                  Đóng / Quay lại
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Section 1: Lesson Diary Entry - Tự động theo PPCT */}
           <div className="bg-slate-900 dark:bg-slate-950 p-5 rounded-2xl border border-slate-800 dark:border-slate-850 shadow-md space-y-4 text-white">
@@ -1295,26 +1553,53 @@ export function LessonEvaluator({
 
           {/* Form Actions footer */}
           {classStudents.length > 0 && (
-            <div className="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                onClick={handleBackToClasses}
-                className="px-6 py-3 border border-slate-250 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-sm transition-all cursor-pointer"
-              >
-                Hủy bỏ
-              </button>
-              {readOnly ? (
-                <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold rounded-xl text-xs flex items-center gap-2">
-                  <span>🔒</span> Đang ở chế độ Chỉ Xem (Không thể lưu tiết học)
-                </div>
-              ) : (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 border-t border-slate-800/80">
+              <div className="text-xs text-slate-400">
+                {editingLessonId ? (
+                  <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Đang mở bản Lưu Tạm. Thầy/Cô có thể bấm <strong>"Lưu Tạm Tiết Học"</strong> để lưu tiếp hoặc <strong>"Lưu Tiết Học & Đánh giá Roster"</strong> để chốt.
+                  </span>
+                ) : (
+                  <span>Thầy/Cô có thể <strong>Lưu tạm</strong> để sau đó mở ra đánh giá tiếp hoặc <strong>Lưu chính thức</strong> ngay.</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-3 w-full sm:w-auto">
                 <button
-                  type="submit"
-                  className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                  type="button"
+                  onClick={handleBackToClasses}
+                  className="px-5 py-3 border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold rounded-xl text-sm transition-all cursor-pointer"
                 >
-                  <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
+                  Hủy bỏ
                 </button>
-              )}
+
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => handleSaveLesson(true)}
+                    className="px-6 py-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer hover:scale-[1.01]"
+                    title="Lưu lại toàn bộ đánh giá hiện tại để sau đó mở ra đánh giá tiếp"
+                  >
+                    <BookmarkCheck className="w-5 h-5 text-amber-100" />
+                    Lưu Tạm Tiết Học
+                  </button>
+                )}
+
+                {readOnly ? (
+                  <div className="px-6 py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 font-bold rounded-xl text-xs flex items-center gap-2">
+                    <span>🔒</span> Đang ở chế độ Chỉ Xem (Không thể lưu tiết học)
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    className="px-7 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer hover:scale-[1.01]"
+                    title="Lưu chính thức và hoàn tất tiết học"
+                  >
+                    <Save className="w-5 h-5" /> Lưu Tiết Học & Đánh giá Roster
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

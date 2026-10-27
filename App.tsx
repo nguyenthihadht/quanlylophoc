@@ -38,7 +38,14 @@ export default function App() {
   
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [assessResetKey, setAssessResetKey] = useState<number>(0);
+  const [resumeLessonId, setResumeLessonId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const handleOpenAssessWithLesson = (lessonId: string) => {
+    setResumeLessonId(lessonId);
+    setActiveTab('assess');
+    setAssessResetKey(k => k + 1);
+  };
 
   // Administrator lock and elevation states
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -1088,13 +1095,16 @@ export default function App() {
               onNavigate={(tab) => {
                 setActiveTab(tab as Tab);
                 if (tab === 'assess') {
+                  setResumeLessonId(null);
                   setAssessResetKey(k => k + 1);
                 }
               }}
               onSelectClassForLesson={(cId) => {
+                setResumeLessonId(null);
                 setActiveTab('assess');
                 setAssessResetKey(k => k + 1);
               }}
+              onNavigateToResumeLesson={handleOpenAssessWithLesson}
             />
           )}
 
@@ -1152,8 +1162,31 @@ export default function App() {
               assessments={assessments}
               timeline={timeline}
               readOnly={isReadOnly}
-              onSaveAssessments={(lId, date, list) => ClassTrackerAPI.saveAssessments(lId, date, list)}
-              onAddLesson={(lesson) => ClassTrackerAPI.addLesson(lesson)}
+              onSaveAssessments={(lId, date, list) => {
+                ClassTrackerAPI.saveAssessments(lId, date, list);
+                syncLocalStates();
+              }}
+              onSaveLessonWithAssessments={(lessonData, list) => {
+                const res = ClassTrackerAPI.saveLessonWithAssessments(lessonData, list);
+                syncLocalStates();
+                return res;
+              }}
+              onAddLesson={(lesson) => {
+                const res = ClassTrackerAPI.addLesson(lesson);
+                syncLocalStates();
+                return res;
+              }}
+              onUpdateLesson={(id, fields) => {
+                const res = ClassTrackerAPI.updateLesson(id, fields);
+                syncLocalStates();
+                return res;
+              }}
+              onDeleteLesson={(id) => {
+                ClassTrackerAPI.deleteLesson(id);
+                syncLocalStates();
+              }}
+              initialResumeLessonId={resumeLessonId}
+              onClearResumeLessonId={() => setResumeLessonId(null)}
             />
           )}
 
@@ -1167,6 +1200,7 @@ export default function App() {
               readOnly={isReadOnly}
               onNavigateToStudents={() => setActiveTab('students')}
               onNavigateToAssess={(cId) => {
+                setResumeLessonId(null);
                 setActiveTab('assess');
                 setAssessResetKey(k => k + 1);
               }}
@@ -1184,6 +1218,7 @@ export default function App() {
               readOnly={isReadOnly}
               onDeleteLesson={(id) => ClassTrackerAPI.deleteLesson(id)}
               onUpdateLesson={(id, name, content, date) => ClassTrackerAPI.updateLesson(id, name, content, date)}
+              onNavigateToAssess={handleOpenAssessWithLesson}
             />
           )}
 

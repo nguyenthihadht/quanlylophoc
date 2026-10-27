@@ -145,27 +145,52 @@ export class ClassTrackerAPI {
     return this.cache;
   }
 
-  // Save changes to Firestore, Server and LocalStorage
+  private static isPersisting = false;
+  private static hasPendingPersist = false;
+
+  // Save changes to Firestore, Server and LocalStorage safely without race conditions
   private static async persist() {
-    localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
+    // 1. Immediately write to LocalStorage and trigger local state subscribers
+    try {
+      localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
+    } catch (e) {
+      console.warn('Could not write to localStorage:', e);
+    }
     this.notify();
 
-    // 1. Save to Firestore
-    try {
-      await saveStateToFirestore(this.cache);
-    } catch (error) {
-      console.warn('Failed to sync state to Firestore:', error);
+    // If a network persistence call is already in progress, mark pending and exit
+    if (this.isPersisting) {
+      this.hasPendingPersist = true;
+      return;
     }
 
-    // 2. Save to local Express backup
+    this.isPersisting = true;
     try {
-      await fetch('/api/db', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.cache)
-      });
-    } catch (e) {
-      console.warn('Failed to sync state to server, saved locally in browser and Firestore', e);
+      do {
+        this.hasPendingPersist = false;
+        // Take a clean snapshot of the latest cache to avoid mutations during flight
+        const snapshot = JSON.parse(JSON.stringify(this.cache));
+
+        // 1. Save to Firestore
+        try {
+          await saveStateToFirestore(snapshot);
+        } catch (error) {
+          console.warn('Failed to sync state to Firestore:', error);
+        }
+
+        // 2. Save to local Express backup
+        try {
+          await fetch('/api/db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(snapshot)
+          });
+        } catch (e) {
+          console.warn('Failed to sync state to server, saved locally in browser and Firestore', e);
+        }
+      } while (this.hasPendingPersist);
+    } finally {
+      this.isPersisting = false;
     }
   }
 
@@ -355,9 +380,23 @@ export class ClassTrackerAPI {
     return newLesson;
   }
 
-  public static updateLesson(id: string, lessonName: string, content: string, date: string): void {
-    this.cache.lessons = this.getLessons().map(l => l.id === id ? { ...l, lessonName, content, date } : l);
+  public static updateLesson(
+    id: string, 
+    lessonNameOrFields: string | Partial<Omit<Lesson, 'id'>>, 
+    content?: string, 
+    date?: string
+  ): Lesson | undefined {
+    if (typeof lessonNameOrFields === 'string') {
+      this.cache.lessons = this.getLessons().map(l => 
+        l.id === id ? { ...l, lessonName: lessonNameOrFields, content: content ?? l.content, date: date ?? l.date } : l
+      );
+    } else {
+      this.cache.lessons = this.getLessons().map(l => 
+        l.id === id ? { ...l, ...lessonNameOrFields } : l
+      );
+    }
     this.persist();
+    return this.getLessons().find(l => l.id === id);
   }
 
   public static deleteLesson(id: string): void {
@@ -365,6 +404,97 @@ export class ClassTrackerAPI {
     // Delete associated assessments
     this.cache.assessments = (this.cache.assessments || []).filter(a => a.lessonId !== id);
     this.persist();
+  }
+
+  // ATOMIC LESSON & ASSESSMENTS PERSISTENCE
+  // Ensures both lesson metadata and all student assessments are written together in a single atomic snapshot
+  public static saveLessonWithAssessments(
+    lessonData: {
+      id?: string;
+      classId: string;
+      lessonName: string;
+      content: string;
+      date: string;
+      createdBy?: string;
+      week?: string;
+      notes?: string;
+      absentStudentIds?: string[];
+      absentStudentsSummary?: string;
+      isDraft?: boolean;
+    },
+    studentAssessments: Omit<Assessment, 'id' | 'lessonId' | 'date'>[]
+  ): Lesson {
+    let targetLessonId = lessonData.id;
+    let savedLesson: Lesson;
+
+    if (targetLessonId) {
+      // Update existing lesson
+      this.cache.lessons = this.getLessons().map(l => 
+        l.id === targetLessonId ? { ...l, ...lessonData, id: targetLessonId! } : l
+      );
+      savedLesson = this.getLessons().find(l => l.id === targetLessonId)!;
+    } else {
+      // Create new lesson
+      targetLessonId = generateUniqueId('lesson');
+      savedLesson = {
+        ...lessonData,
+        id: targetLessonId,
+        createdBy: lessonData.createdBy || this.cache.settings?.teacherName || 'Cô Nguyễn Thị Hà'
+      };
+      this.cache.lessons = [...this.getLessons(), savedLesson];
+    }
+
+    // Simultaneously update assessments for this lesson
+    const currentAssessments = this.getAssessments().filter(a => a.lessonId !== targetLessonId);
+    const newAssessments: Assessment[] = studentAssessments.map((sa, idx) => ({
+      id: `assess_${targetLessonId}_${sa.studentId || idx}_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+      lessonId: targetLessonId!,
+      date: lessonData.date,
+      studentId: sa.studentId,
+      completion: sa.completion,
+      attitude: sa.attitude,
+      skill: sa.skill,
+      cooperation: sa.cooperation,
+      note: sa.note || '',
+      isAbsent: sa.isAbsent ?? false
+    }));
+
+    this.cache.assessments = [...currentAssessments, ...newAssessments];
+    this.persist();
+    return savedLesson;
+  }
+
+  // Auto-recovery: If a lesson has 0 saved assessments, populate default assessments from class students
+  public static ensureLessonAssessments(lessonId: string): Assessment[] {
+    const existing = this.getAssessments().filter(a => a.lessonId === lessonId);
+    if (existing.length > 0) return existing;
+
+    const targetLesson = this.getLessons().find(l => l.id === lessonId);
+    if (!targetLesson) return [];
+
+    const classStudents = this.getStudents().filter(s => s.classId === targetLesson.classId);
+    if (classStudents.length === 0) return [];
+
+    const absentSet = new Set(targetLesson.absentStudentIds || []);
+    const recovered: Assessment[] = classStudents.map((s, idx) => {
+      const isAbsent = absentSet.has(s.id);
+      return {
+        id: `assess_rec_${lessonId}_${s.id}_${Date.now()}_${idx}`,
+        lessonId,
+        date: targetLesson.date,
+        studentId: s.id,
+        completion: isAbsent ? 'Chưa hoàn thành' : 'Hoàn thành',
+        attitude: 'Bình thường',
+        skill: isAbsent ? 'Cần hỗ trợ' : 'Đạt',
+        cooperation: isAbsent ? 'Cần cố gắng' : 'Đạt',
+        note: isAbsent ? 'Vắng học' : '',
+        isAbsent
+      };
+    });
+
+    this.cache.assessments = [...(this.cache.assessments || []), ...recovered];
+    this.persist();
+    return recovered;
   }
 
   // Assessments
