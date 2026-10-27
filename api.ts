@@ -89,6 +89,49 @@ export class ClassTrackerAPI {
     this.persist();
   }
 
+  // Self-healing migration: Automatically guarantee that every saved lesson has assessment records for all its students
+  public static repairAllLessonAssessments(): boolean {
+    if (!this.cache || !this.cache.lessons || !this.cache.students) return false;
+    if (!this.cache.assessments) this.cache.assessments = [];
+
+    const existingAssessments = this.cache.assessments;
+    let hasRepaired = false;
+    const newAssessments: Assessment[] = [];
+
+    this.cache.lessons.forEach(lesson => {
+      const currentForLesson = existingAssessments.filter(a => a.lessonId === lesson.id);
+      if (currentForLesson.length === 0) {
+        const classStudents = this.cache.students.filter(s => s.classId === lesson.classId);
+        if (classStudents.length > 0) {
+          const absentSet = new Set(lesson.absentStudentIds || []);
+          classStudents.forEach((student, idx) => {
+            const isAbsent = absentSet.has(student.id);
+            newAssessments.push({
+              id: `assess_auto_${lesson.id}_${student.id}_${idx}`,
+              lessonId: lesson.id,
+              date: lesson.date,
+              studentId: student.id,
+              completion: isAbsent ? 'Chưa hoàn thành' : 'Hoàn thành',
+              attitude: 'Bình thường',
+              skill: isAbsent ? 'Cần hỗ trợ' : 'Đạt',
+              cooperation: isAbsent ? 'Cần cố gắng' : 'Đạt',
+              note: isAbsent ? 'Vắng học' : '',
+              isAbsent
+            });
+          });
+          hasRepaired = true;
+        }
+      }
+    });
+
+    if (hasRepaired) {
+      this.cache.assessments = [...existingAssessments, ...newAssessments];
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
   // Load complete state from Firestore (with server and LocalStorage as robust fallbacks)
   public static async init() {
     // 1. Try Firestore first
@@ -98,6 +141,7 @@ export class ClassTrackerAPI {
         this.cache = firestoreData;
         this.isLoaded = true;
         this.sanitizeDuplicateStudentIds();
+        this.repairAllLessonAssessments();
         localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
         this.notify();
         return this.cache;
@@ -114,6 +158,7 @@ export class ClassTrackerAPI {
         this.cache = data;
         this.isLoaded = true;
         this.sanitizeDuplicateStudentIds();
+        this.repairAllLessonAssessments();
         // Save to LocalStorage as a local backup copy
         localStorage.setItem('class_tracker_backup', JSON.stringify(data));
         this.notify();
@@ -130,6 +175,7 @@ export class ClassTrackerAPI {
         this.cache = JSON.parse(local);
         this.isLoaded = true;
         this.sanitizeDuplicateStudentIds();
+        this.repairAllLessonAssessments();
         this.notify();
         return this.cache;
       } catch (e) {

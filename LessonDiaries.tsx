@@ -36,7 +36,100 @@ export function LessonDiaries({
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'official' | 'draft'>('all');
+  const [selectedWeekFilter, setSelectedWeekFilter] = useState<string>('all');
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   
+  // Auto-repair any lessons missing assessments on mount so all lessons have full data
+  useEffect(() => {
+    ClassTrackerAPI.repairAllLessonAssessments();
+  }, []);
+
+  // Helper to extract clean week string (e.g. "Tuần 6") from lesson
+  const getLessonWeek = (l: Lesson): string => {
+    if (l.week && l.week.trim()) return l.week.trim();
+    const matched = timeline.find(w => l.date >= w.startDate && l.date <= w.endDate);
+    if (matched?.week) return matched.week;
+    return 'Khác';
+  };
+
+  // List of weeks with assessed class counts
+  const availableWeeks = useMemo(() => {
+    const weekMap = new Map<string, { count: number; classesCount: number; stt: number }>();
+
+    // 1. Pre-populate from timeline weeks (Tuần 1 -> Tuần 35)
+    timeline.forEach(t => {
+      const wKey = t.week || `Tuần ${t.stt}`;
+      if (!weekMap.has(wKey)) {
+        weekMap.set(wKey, { count: 0, classesCount: 0, stt: t.stt || 999 });
+      }
+    });
+
+    // 2. Count lessons and distinct classes in each week
+    const weekClassesMap = new Map<string, Set<string>>();
+    lessons.forEach(l => {
+      const wKey = getLessonWeek(l);
+      if (!weekClassesMap.has(wKey)) {
+        weekClassesMap.set(wKey, new Set<string>());
+      }
+      weekClassesMap.get(wKey)!.add(l.classId);
+
+      const matchNum = wKey.match(/\d+/);
+      const stt = matchNum ? parseInt(matchNum[0], 10) : 999;
+      const curr = weekMap.get(wKey) || { count: 0, classesCount: 0, stt };
+      weekMap.set(wKey, {
+        count: curr.count + 1,
+        classesCount: weekClassesMap.get(wKey)!.size,
+        stt: curr.stt || stt
+      });
+    });
+
+    // Update actual classes count
+    weekClassesMap.forEach((cSet, wKey) => {
+      if (weekMap.has(wKey)) {
+        weekMap.get(wKey)!.classesCount = cSet.size;
+      }
+    });
+
+    return Array.from(weekMap.entries())
+      .filter(([_, info]) => info.count > 0 || (info.stt >= 1 && info.stt <= 35))
+      .sort((a, b) => a[1].stt - b[1].stt)
+      .map(([week, info]) => ({
+        week,
+        count: info.count,
+        classesCount: info.classesCount,
+        stt: info.stt
+      }));
+  }, [timeline, lessons]);
+
+  // List of classes that have been assessed in the currently selected week
+  const assessedClassesInSelectedWeek = useMemo(() => {
+    if (selectedWeekFilter === 'all') return [];
+    const classMap = new Map<string, { classInfo: Class; lesson: Lesson; studentCount: number }>();
+    
+    lessons.forEach(l => {
+      if (getLessonWeek(l) === selectedWeekFilter) {
+        const cls = classes.find(c => c.id === l.classId);
+        if (cls && !classMap.has(cls.id)) {
+          const classStudents = students.filter(s => s.classId === cls.id);
+          const directCount = assessments.filter(a => a.lessonId === l.id).length;
+          classMap.set(cls.id, {
+            classInfo: cls,
+            lesson: l,
+            studentCount: directCount > 0 ? directCount : classStudents.length
+          });
+        }
+      }
+    });
+    return Array.from(classMap.values());
+  }, [selectedWeekFilter, lessons, classes, students, assessments]);
+
+  // Classes in the school that have NOT yet been assessed in this week
+  const unassessedClassesInSelectedWeek = useMemo(() => {
+    if (selectedWeekFilter === 'all') return [];
+    const assessedIds = new Set(assessedClassesInSelectedWeek.map(a => a.classInfo.id));
+    return classes.filter(c => !assessedIds.has(c.id));
+  }, [selectedWeekFilter, assessedClassesInSelectedWeek, classes]);
+
   // Edit States
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [editName, setEditName] = useState('');
@@ -46,7 +139,6 @@ export function LessonDiaries({
   // Auto-fill edit name based on timeline week when editing date changes
   useEffect(() => {
     if (!editDate || !timeline || timeline.length === 0 || !editingLesson) return;
-    // Only auto-update if the date has actually been changed from the original lesson date
     if (editDate === editingLesson.date) return;
     const matchedWeek = timeline.find(w => editDate >= w.startDate && editDate <= w.endDate);
     if (matchedWeek && matchedWeek.lessonName) {
@@ -76,15 +168,19 @@ export function LessonDiaries({
   const draftCount = lessons.filter(l => l.isDraft).length;
   const officialCount = lessons.filter(l => !l.isDraft).length;
 
-  // Filter lessons
+  // Filter lessons by search, draft/official status, selected week, and selected class
   const filteredLessons = lessons.filter(l => {
     const targetClass = classes.find(c => c.id === l.classId);
+    const lessonWeek = getLessonWeek(l);
+
     const matchesSearch = l.lessonName.toLowerCase().includes(searchTerm.toLowerCase()) || 
            l.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
            (targetClass && targetClass.name.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
-    if (statusFilter === 'official') return !l.isDraft;
-    if (statusFilter === 'draft') return !!l.isDraft;
+    if (statusFilter === 'official' && l.isDraft) return false;
+    if (statusFilter === 'draft' && !l.isDraft) return false;
+    if (selectedWeekFilter !== 'all' && lessonWeek !== selectedWeekFilter) return false;
+    if (selectedClassFilter !== 'all' && l.classId !== selectedClassFilter) return false;
     return true;
   });
 
@@ -173,8 +269,8 @@ export function LessonDiaries({
       {!selectedLessonId ? (
         // LIST VIEW
         <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col md:flex-row gap-4 justify-between items-center">
-            <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center">
+            <div className="flex flex-wrap items-center gap-3">
               <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 text-base shrink-0">
                 <BookOpen className="w-5 h-5 text-blue-500" /> Nhật ký dạy học & Đã dạy
               </h3>
@@ -222,18 +318,157 @@ export function LessonDiaries({
               </div>
             </div>
             
-            {/* Search Input */}
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Tìm bài học, nội dung, lớp..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
-              />
+            {/* Week Dropdown & Search Input */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              {/* Nút xổ xuống chọn tuần đánh giá */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-350 flex items-center gap-1 shrink-0 whitespace-nowrap">
+                  <Calendar className="w-4 h-4 text-blue-500" /> Chọn tuần:
+                </span>
+                <select
+                  value={selectedWeekFilter}
+                  onChange={(e) => {
+                    setSelectedWeekFilter(e.target.value);
+                    setSelectedClassFilter('all');
+                  }}
+                  className="px-3 py-2 text-xs font-extrabold rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-850 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer shadow-2xs"
+                >
+                  <option value="all">Tất cả các tuần ({lessons.length} tiết)</option>
+                  {availableWeeks.map(item => (
+                    <option key={item.week} value={item.week}>
+                      {item.week} {item.classesCount > 0 ? `(${item.classesCount} lớp đã đánh giá)` : `(Chưa có tiết)`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm bài học, lớp..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
+                />
+              </div>
             </div>
           </div>
+
+          {/* Hiển thị danh sách các lớp đã đánh giá của tuần được chọn */}
+          {selectedWeekFilter !== 'all' && (
+            <div className="p-4 bg-gradient-to-r from-blue-900/30 via-slate-800 to-indigo-900/30 dark:bg-slate-800/90 border border-blue-500/40 rounded-2xl shadow-xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
+                    📅
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>Các lớp đã đánh giá trong {selectedWeekFilter}</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold border border-emerald-500/30">
+                        {assessedClassesInSelectedWeek.length} lớp hoàn thành
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Bấm vào từng lớp bên dưới để lọc nhanh danh sách hoặc bấm icon con mắt để mở ngay sổ điểm
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedClassFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClassFilter('all')}
+                      className="px-2.5 py-1 text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-700 dark:text-slate-200 rounded-lg transition-all cursor-pointer"
+                    >
+                      Hiện tất cả lớp tuần này
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedWeekFilter('all'); setSelectedClassFilter('all'); }}
+                    className="text-xs text-blue-600 dark:text-sky-400 hover:underline font-bold cursor-pointer"
+                  >
+                    Xem tất cả tuần ({lessons.length} tiết) →
+                  </button>
+                </div>
+              </div>
+
+              {/* Class Badges Row */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {assessedClassesInSelectedWeek.length === 0 ? (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 rounded-xl text-xs text-amber-800 dark:text-amber-300 w-full flex items-center justify-between gap-2">
+                    <span>⚠️ Chưa có lớp nào hoàn thành lưu đánh giá trong {selectedWeekFilter}.</span>
+                    {onNavigateToAssess && !readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToAssess('')}
+                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs"
+                      >
+                        + Đánh giá tiết học mới ngay
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  assessedClassesInSelectedWeek.map(({ classInfo, lesson, studentCount }) => {
+                    const isSelectedClass = selectedClassFilter === classInfo.id;
+                    return (
+                      <div key={classInfo.id} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClassFilter(isSelectedClass ? 'all' : classInfo.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer border ${
+                            isSelectedClass
+                              ? 'bg-blue-600 text-white border-blue-500 shadow-md ring-2 ring-blue-400'
+                              : 'bg-white dark:bg-slate-750 hover:bg-blue-50 dark:hover:bg-slate-700 text-slate-800 dark:text-white border-slate-200 dark:border-slate-650'
+                          }`}
+                          title={`Bấm để ${isSelectedClass ? 'bỏ lọc' : 'lọc riêng'} Lớp ${classInfo.name}`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span>Lớp {classInfo.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                            isSelectedClass ? 'bg-blue-700 text-white font-black' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold'
+                          }`}>
+                            {studentCount} HS
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLessonId(lesson.id)}
+                          className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-slate-700 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 cursor-pointer transition-all"
+                          title={`Mở ngay chi tiết sổ điểm & nhận xét của Lớp ${classInfo.name}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Notice if some classes are unassessed in this week */}
+              {unassessedClassesInSelectedWeek.length > 0 && (
+                <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    Còn {unassessedClassesInSelectedWeek.length} lớp chưa đánh giá trong {selectedWeekFilter}: {unassessedClassesInSelectedWeek.map(c => `Lớp ${c.name}`).join(', ')}
+                  </span>
+                  {onNavigateToAssess && !readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToAssess('')}
+                      className="text-blue-600 dark:text-sky-400 hover:underline font-bold cursor-pointer"
+                    >
+                      + Chấm điểm lớp tiếp theo →
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {filteredLessons.length === 0 ? (
             <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-150 text-slate-400">
@@ -244,7 +479,9 @@ export function LessonDiaries({
               {[...filteredLessons].sort((a, b) => b.date.localeCompare(a.date)).map((lesson) => {
                 const targetClass = classes.find(c => c.id === lesson.classId);
                 const targetGrade = targetClass ? grades.find(g => g.id === targetClass.gradeId) : null;
-                const totalAssessments = assessments.filter(a => a.lessonId === lesson.id).length;
+                const classStudents = students.filter(s => s.classId === lesson.classId);
+                const directCount = assessments.filter(a => a.lessonId === lesson.id).length;
+                const totalAssessments = directCount > 0 ? directCount : classStudents.length;
 
                 return (
                   <div key={lesson.id} className={`p-5 bg-white dark:bg-slate-800 rounded-2xl border shadow-xs flex flex-col justify-between transition-all hover:shadow-sm ${
@@ -303,8 +540,8 @@ export function LessonDiaries({
                     </div>
 
                     <div className="flex justify-between items-center mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60 gap-2 flex-wrap">
-                      <span className="text-xs text-slate-400 font-medium">
-                        Đã đánh giá: <span className="font-bold text-slate-700 dark:text-slate-300">{totalAssessments} học sinh</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Đã đánh giá: <span className="font-extrabold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-650">{totalAssessments} học sinh</span>
                       </span>
 
                       <div className="flex items-center gap-2">
