@@ -76,3 +76,10 @@
   }
 }
 
+/* Ensure all select and option dropdowns use dark background with white text */
+select, option {
+  color-scheme: dark;
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+

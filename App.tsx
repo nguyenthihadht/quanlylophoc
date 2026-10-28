@@ -39,10 +39,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [assessResetKey, setAssessResetKey] = useState<number>(0);
   const [resumeLessonId, setResumeLessonId] = useState<string | null>(null);
+  const [assessInitialClassId, setAssessInitialClassId] = useState<string | null>(null);
+  const [assessInitialWeek, setAssessInitialWeek] = useState<number | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const handleOpenAssessWithLesson = (lessonId: string) => {
-    setResumeLessonId(lessonId);
+  const handleOpenAssessWithLesson = (lessonId?: string, targetClassId?: string, targetWeek?: number) => {
+    setResumeLessonId(lessonId || null);
+    setAssessInitialClassId(targetClassId || null);
+    setAssessInitialWeek(targetWeek || null);
     setActiveTab('assess');
     setAssessResetKey(k => k + 1);
   };
@@ -1187,6 +1191,12 @@ export default function App() {
               }}
               initialResumeLessonId={resumeLessonId}
               onClearResumeLessonId={() => setResumeLessonId(null)}
+              initialClassId={assessInitialClassId}
+              initialWeek={assessInitialWeek}
+              onClearInitialParams={() => {
+                setAssessInitialClassId(null);
+                setAssessInitialWeek(null);
+              }}
             />
           )}
 

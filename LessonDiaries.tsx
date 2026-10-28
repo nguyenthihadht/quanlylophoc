@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { BookOpen, Calendar, Printer, Search, Trash2, Edit2, Edit3, Eye, UserCheck, ArrowLeft, Layers, BookmarkCheck, ArrowRight, CheckCircle2, Users } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { BookOpen, Calendar, Printer, Search, Trash2, Edit2, Edit3, Eye, UserCheck, ArrowLeft, Layers, BookmarkCheck, ArrowRight, CheckCircle2, Users, ChevronDown, Check } from 'lucide-react';
 import { Class, Lesson, Student, Assessment, Grade, TimelineWeek } from '../types';
 import { ClassTrackerAPI } from '../lib/api';
 
@@ -18,7 +18,7 @@ interface LessonDiariesProps {
   readOnly?: boolean;
   onDeleteLesson: (id: string) => void;
   onUpdateLesson: (id: string, name: string, content: string, date: string) => void;
-  onNavigateToAssess?: (lessonId: string) => void;
+  onNavigateToAssess?: (lessonId?: string, classId?: string, targetWeek?: number) => void;
 }
 
 export function LessonDiaries({
@@ -38,6 +38,21 @@ export function LessonDiaries({
   const [statusFilter, setStatusFilter] = useState<'all' | 'official' | 'draft'>('all');
   const [selectedWeekFilter, setSelectedWeekFilter] = useState<string>('all');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
+  const [isWeekDropdownOpen, setIsWeekDropdownOpen] = useState(false);
+  const weekDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close week dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (weekDropdownRef.current && !weekDropdownRef.current.contains(event.target as Node)) {
+        setIsWeekDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
   
   // Auto-repair any lessons missing assessments on mount so all lessons have full data
   useEffect(() => {
@@ -320,29 +335,103 @@ export function LessonDiaries({
             
             {/* Week Dropdown & Search Input */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              {/* Nút xổ xuống chọn tuần đánh giá */}
+              {/* Nút xổ xuống chọn tuần đánh giá - Nền đen chữ trắng */}
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-bold text-slate-600 dark:text-slate-350 flex items-center gap-1 shrink-0 whitespace-nowrap">
-                  <Calendar className="w-4 h-4 text-blue-500" /> Chọn tuần:
+                <span className="text-xs font-bold text-slate-350 flex items-center gap-1 shrink-0 whitespace-nowrap">
+                  <Calendar className="w-4 h-4 text-sky-400" /> Chọn tuần:
                 </span>
-                <select
-                  value={selectedWeekFilter}
-                  onChange={(e) => {
-                    setSelectedWeekFilter(e.target.value);
-                    setSelectedClassFilter('all');
-                  }}
-                  className="px-3 py-2 text-xs font-extrabold rounded-xl border border-slate-250 dark:border-slate-700 bg-white dark:bg-slate-750 text-slate-850 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer shadow-2xs"
-                >
-                  <option value="all">Tất cả các tuần ({lessons.length} tiết)</option>
-                  {availableWeeks.map(item => (
-                    <option key={item.week} value={item.week}>
-                      {item.week} {item.classesCount > 0 ? `(${item.classesCount} lớp đã đánh giá)` : `(Chưa có tiết)`}
-                    </option>
-                  ))}
-                </select>
+                <div ref={weekDropdownRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsWeekDropdownOpen(!isWeekDropdownOpen)}
+                    className="px-3.5 py-2 text-xs font-extrabold rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-850 text-white flex items-center justify-between gap-2.5 shadow-sm transition-colors cursor-pointer min-w-[210px] max-w-[280px]"
+                  >
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="truncate text-white">
+                        {selectedWeekFilter === 'all'
+                          ? `Tất cả các tuần (${lessons.length} tiết)`
+                          : (() => {
+                              const item = availableWeeks.find(w => w.week === selectedWeekFilter);
+                              return `${selectedWeekFilter} ${item && item.classesCount > 0 ? `(${item.classesCount} lớp)` : '(Chưa có tiết)'}`;
+                            })()
+                        }
+                      </span>
+                    </div>
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${isWeekDropdownOpen ? 'rotate-180 text-sky-400' : ''}`} />
+                  </button>
+
+                  {/* Dropdown Menu - Nền đen chữ trắng */}
+                  {isWeekDropdownOpen && (
+                    <div className="absolute left-0 mt-1.5 w-72 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 text-white">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedWeekFilter('all');
+                          setSelectedClassFilter('all');
+                          setIsWeekDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                          selectedWeekFilter === 'all'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          {selectedWeekFilter === 'all' && <Check className="w-3.5 h-3.5 text-white" />}
+                          <span>Tất cả các tuần</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                          {lessons.length} tiết
+                        </span>
+                      </button>
+
+                      <div className="border-t border-slate-800 my-1" />
+
+                      {availableWeeks.map(item => {
+                        const isSelected = selectedWeekFilter === item.week;
+                        return (
+                          <button
+                            key={item.week}
+                            type="button"
+                            onClick={() => {
+                              setSelectedWeekFilter(item.week);
+                              setSelectedClassFilter('all');
+                              setIsWeekDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-600 text-white font-bold shadow-sm'
+                                : 'text-slate-100 hover:bg-slate-800 hover:text-white font-medium'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                              <span className="truncate">{item.week}</span>
+                            </span>
+                            {item.classesCount > 0 ? (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                isSelected
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-emerald-950/90 text-emerald-300 border border-emerald-800/80'
+                              }`}>
+                                {item.classesCount} lớp đã đánh giá
+                              </span>
+                            ) : (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
+                                isSelected ? 'bg-white/10 text-slate-200' : 'text-slate-400 bg-slate-800/70'
+                              }`}>
+                                Chưa có tiết
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Search Input */}
+              {/* Search Input - Nền đen chữ trắng */}
               <div className="relative w-full sm:w-56">
                 <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
                 <input
@@ -350,7 +439,7 @@ export function LessonDiaries({
                   placeholder="Tìm bài học, lớp..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-750 text-slate-800 dark:text-slate-100 outline-none"
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-400 focus:border-blue-500 outline-none"
                 />
               </div>
             </div>
@@ -451,20 +540,33 @@ export function LessonDiaries({
 
               {/* Notice if some classes are unassessed in this week */}
               {unassessedClassesInSelectedWeek.length > 0 && (
-                <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/50 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                    Còn {unassessedClassesInSelectedWeek.length} lớp chưa đánh giá trong {selectedWeekFilter}: {unassessedClassesInSelectedWeek.map(c => `Lớp ${c.name}`).join(', ')}
-                  </span>
-                  {onNavigateToAssess && !readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => onNavigateToAssess('')}
-                      className="text-blue-600 dark:text-sky-400 hover:underline font-bold cursor-pointer"
-                    >
-                      + Chấm điểm lớp tiếp theo →
-                    </button>
-                  )}
+                <div className="pt-2.5 border-t border-slate-700/80 text-xs text-slate-300 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                      Còn {unassessedClassesInSelectedWeek.length} lớp chưa đánh giá trong {selectedWeekFilter}:
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Bấm vào từng lớp bên dưới để đánh giá bổ sung ngay
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {unassessedClassesInSelectedWeek.map(c => {
+                      const matchW = selectedWeekFilter.match(/\d+/);
+                      const wNum = matchW ? parseInt(matchW[0], 10) : 7;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => onNavigateToAssess && onNavigateToAssess(undefined, c.id, wNum)}
+                          className="px-2.5 py-1 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-600/60 text-amber-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title={`Bấm để đánh giá bổ sung cho Lớp ${c.name} trong ${selectedWeekFilter}`}
+                        >
+                          <span>+ Đánh giá bổ sung: Lớp {c.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

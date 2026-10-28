@@ -131,12 +131,12 @@ export function Dashboard({
     }
   };
 
-  // Normalize teacher name so "Cô" is never duplicated
+  // Normalize teacher name so "Cô" / "Thầy" is never duplicated
   const rawTeacherName = (settings?.teacherName || 'Cô Nguyễn Thị Hà').trim();
-  const prefixMatch = rawTeacherName.match(/^(cô|thầy)\s+(.+)$/i);
-  const teacherPrefix = prefixMatch ? (prefixMatch[1].charAt(0).toUpperCase() + prefixMatch[1].slice(1).toLowerCase()) : 'Cô';
-  const teacherCleanName = prefixMatch ? prefixMatch[2] : rawTeacherName;
-  const teacherFullLabel = prefixMatch ? rawTeacherName : `Cô ${rawTeacherName}`;
+  const isThay = /^thầy/i.test(rawTeacherName);
+  const teacherPrefix = isThay ? 'Thầy' : 'Cô';
+  const teacherCleanName = rawTeacherName.replace(/^(?:(?:cô|thầy)\s*)+/i, '').trim() || rawTeacherName;
+  const teacherFullLabel = `${teacherPrefix} ${teacherCleanName}`;
 
   return (
     <div id="dashboard-container" className="space-y-6">

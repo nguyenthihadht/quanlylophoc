@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BookOpen, Calendar, CheckSquare, Sparkles, UserCheck, UserX, 
   ChevronRight, ChevronLeft, ChevronDown, Save, ArrowLeft, RotateCcw, 
@@ -49,6 +49,9 @@ interface LessonEvaluatorProps {
   onDeleteLesson?: (id: string) => void;
   initialResumeLessonId?: string | null;
   onClearResumeLessonId?: () => void;
+  initialClassId?: string | null;
+  initialWeek?: number | null;
+  onClearInitialParams?: () => void;
 }
 
 export function LessonEvaluator({
@@ -65,7 +68,10 @@ export function LessonEvaluator({
   onUpdateLesson,
   onDeleteLesson,
   initialResumeLessonId,
-  onClearResumeLessonId
+  onClearResumeLessonId,
+  initialClassId,
+  initialWeek,
+  onClearInitialParams
 }: LessonEvaluatorProps) {
   // STRICT STEP ARCHITECTURE:
   // selectedGradeId === null -> BƯỚC 1: CHỌN KHỐI (Không hiển thị danh sách lớp)
@@ -75,6 +81,22 @@ export function LessonEvaluator({
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [lessonDate, setLessonDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  // Current calendar week based on real world date (defaults to 8 if end of October)
+  const currentCalendarWeek = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const matched = timeline.find(w => w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate);
+    return matched?.stt || 8;
+  }, [timeline]);
+
+  // Helper to get a suitable date for a given week from timeline
+  const getTimelineDateForWeek = (weekNum: number): string => {
+    const matched = timeline.find(w => w.stt === weekNum);
+    if (matched?.startDate) return matched.startDate;
+    const base = new Date('2025-09-01');
+    base.setDate(base.getDate() + (weekNum - 1) * 7 + 2);
+    return base.toISOString().split('T')[0];
+  };
 
   // If the selected grade is no longer valid, reset to Step 1
   useEffect(() => {
@@ -86,9 +108,10 @@ export function LessonEvaluator({
 
   // Step 3 state: Form data
   const [selectedWeek, setSelectedWeek] = useState<number>(() => {
+    if (initialWeek) return initialWeek;
     const todayStr = new Date().toISOString().split('T')[0];
     const matched = timeline.find(w => w.startDate && w.endDate && todayStr >= w.startDate && todayStr <= w.endDate);
-    return matched?.stt || 1;
+    return matched?.stt || 8;
   });
   const [lessonName, setLessonName] = useState('');
   const [lessonContent, setLessonContent] = useState('');
@@ -327,6 +350,25 @@ export function LessonEvaluator({
     }
   }, [initialResumeLessonId, lessons]);
 
+  // Tự động chọn lớp và tuần học khi nhận initialClassId / initialWeek
+  useEffect(() => {
+    if (initialClassId && classes.length > 0) {
+      const targetClass = classes.find(c => c.id === initialClassId);
+      if (targetClass) {
+        const targetGrade = grades.find(g => g.id === targetClass.gradeId);
+        setSelectedGradeId(targetGrade?.id || targetClass.gradeId);
+        handleSelectClass(targetClass.id);
+        if (initialWeek) {
+          setSelectedWeek(initialWeek);
+          setLessonDate(getTimelineDateForWeek(initialWeek));
+          const res = resolveLessonName(initialWeek, targetClass.id);
+          if (res) setLessonName(res);
+        }
+        onClearInitialParams?.();
+      }
+    }
+  }, [initialClassId, initialWeek, classes, grades]);
+
   // Đánh dấu nhanh học sinh vắng / có mặt
   const handleToggleAbsent = (studentId: string) => {
     setAbsentStudentIds(prev => {
@@ -498,7 +540,12 @@ export function LessonEvaluator({
       setNotification(`💾 Đã LƯU TẠM tiết học "${lessonName.trim()}" (Lớp ${currentClassName})! Thầy/Cô có thể tiếp tục đánh giá hoặc mở lại sau.`);
       setTimeout(() => setNotification(''), 4500);
     } else {
-      setNotification(`🎉 Đã LƯU CHÍNH THỨC bài giảng Tuần ${selectedWeek} và toàn bộ đánh giá học sinh thành công!`);
+      const isComplementary = selectedWeek < currentCalendarWeek;
+      setNotification(
+        isComplementary
+          ? `🎉 Đã LƯU CHÍNH THỨC đánh giá bổ sung cho Tuần ${selectedWeek} (Lớp ${currentClassName}) thành công!`
+          : `🎉 Đã LƯU CHÍNH THỨC bài giảng Tuần ${selectedWeek} và toàn bộ đánh giá học sinh thành công!`
+      );
       setTimeout(() => {
         setNotification('');
         setSelectedClassId(null);
@@ -824,49 +871,179 @@ export function LessonEvaluator({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4.5">
-              {gradeClasses.map((c) => {
-                const totalClassStudents = students.filter(s => s.classId === c.id).length;
-                const isTech = currentGrade?.name.includes('5') || c.subject === 'Công nghệ';
+            <div className="space-y-4">
+              {/* Panel Chọn Tuần Đánh Giá & Chế độ Đánh Giá Bổ Sung */}
+              <div className="bg-slate-850 p-4 rounded-2xl border border-slate-700/80 shadow-md space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-sky-400" />
+                    <span className="text-xs font-black text-white uppercase tracking-wider">
+                      Tuần giảng dạy / đánh giá:
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                      selectedWeek === currentCalendarWeek 
+                        ? 'bg-blue-600 text-white' 
+                        : selectedWeek < currentCalendarWeek 
+                        ? 'bg-amber-500 text-slate-950' 
+                        : 'bg-indigo-600 text-white'
+                    } shadow-xs`}>
+                      Tuần {selectedWeek} {selectedWeek === currentCalendarWeek ? '(Hiện tại)' : selectedWeek < currentCalendarWeek ? '(Đánh giá bổ sung)' : '(Kế hoạch)'}
+                    </span>
+                  </div>
 
-                return (
+                  {/* Nút chọn nhanh tuần */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                    <span className="text-slate-400 text-[11px] mr-1">Chọn nhanh:</span>
                     <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => handleSelectClass(c.id)}
-                    className="p-5 bg-[#0f2444] hover:bg-[#163a66] text-white rounded-2xl border-2 border-blue-800/90 hover:border-sky-400 hover:shadow-xl text-left transition-all group flex flex-col justify-between h-44 cursor-pointer"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
-                          isTech 
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
-                            : 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
-                        }`}>
-                          {isTech ? '🛠️ Công nghệ' : '💻 Tin học'}
-                        </span>
-                        <div className="w-7 h-7 rounded-full bg-blue-900/60 group-hover:bg-blue-600 text-sky-300 group-hover:text-white flex items-center justify-center transition-all border border-blue-700/60">
-                          <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                      type="button"
+                      onClick={() => {
+                        setSelectedWeek(7);
+                        setLessonDate(getTimelineDateForWeek(7));
+                      }}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1 ${
+                        selectedWeek === 7 
+                          ? 'bg-amber-500 text-slate-950 font-black shadow-md ring-2 ring-amber-400' 
+                          : 'bg-slate-800 text-amber-300 hover:bg-slate-750 border border-amber-600/40'
+                      }`}
+                    >
+                      <span>⚡ Tuần 7 (Đánh giá bổ sung)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedWeek(8);
+                        setLessonDate(new Date().toISOString().split('T')[0]);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer text-xs font-bold flex items-center gap-1 ${
+                        selectedWeek === 8 
+                          ? 'bg-blue-600 text-white font-black shadow-md ring-2 ring-blue-400' 
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
+                      }`}
+                    >
+                      <span>📅 Tuần 8 (Hiện tại)</span>
+                    </button>
+
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => {
+                        const w = Number(e.target.value);
+                        setSelectedWeek(w);
+                        setLessonDate(getTimelineDateForWeek(w));
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-extrabold rounded-xl border border-slate-700 bg-slate-900 text-white outline-none cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    >
+                      {Array.from({ length: 35 }, (_, i) => i + 1).map(w => (
+                        <option key={w} value={w}>
+                          Tuần {w} {w === 7 ? '(Tuần trước - Đánh giá bổ sung)' : w === 8 ? '(Hiện tại)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {selectedWeek < currentCalendarWeek && (
+                  <div className="p-3 bg-amber-950/40 border border-amber-500/50 rounded-xl text-xs text-amber-200 flex items-center gap-2">
+                    <span className="text-base shrink-0">⚡</span>
+                    <span>
+                      <strong>Chế độ đánh giá bổ sung cho Tuần {selectedWeek}:</strong> Tiết học tuần trước chưa kịp đánh giá có thể đánh giá bù ngay bây giờ. Khi bấm vào lớp học bên dưới, tên bài sẽ tự động khớp theo PPCT Tuần {selectedWeek}.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Grid các lớp của khối */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4.5">
+                {gradeClasses.map((c) => {
+                  const totalClassStudents = students.filter(s => s.classId === c.id).length;
+                  const isTech = currentGrade?.name.includes('5') || c.subject === 'Công nghệ';
+
+                  // Kiểm tra xem lớp này đã có tiết dạy Tuần `selectedWeek` chưa
+                  const weekLesson = lessons.find(l => 
+                    l.classId === c.id && (
+                      l.week === `Tuần ${selectedWeek}` || 
+                      (!l.week && timeline.find(w => w.stt === selectedWeek && l.date >= w.startDate && l.date <= w.endDate))
+                    )
+                  );
+                  const isAssessed = Boolean(weekLesson && !weekLesson.isDraft);
+                  const isDraft = Boolean(weekLesson && weekLesson.isDraft);
+
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        if (weekLesson) {
+                          handleResumeLesson(weekLesson);
+                        } else {
+                          handleSelectClass(c.id);
+                          setLessonDate(getTimelineDateForWeek(selectedWeek));
+                          const res = resolveLessonName(selectedWeek, c.id);
+                          if (res) setLessonName(res);
+                        }
+                      }}
+                      className={`p-5 text-white rounded-2xl border-2 text-left transition-all group flex flex-col justify-between min-h-[190px] cursor-pointer shadow-md ${
+                        isAssessed 
+                          ? 'bg-[#0b253a] hover:bg-[#103450] border-emerald-600/70 hover:border-emerald-400' 
+                          : isDraft
+                          ? 'bg-[#291b0d] hover:bg-[#382613] border-amber-500/70 hover:border-amber-400'
+                          : 'bg-[#0f2444] hover:bg-[#163a66] border-blue-800/90 hover:border-sky-400'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                            isTech 
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                              : 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
+                          }`}>
+                            {isTech ? '🛠️ Công nghệ' : '💻 Tin học'}
+                          </span>
+                          <div className="w-7 h-7 rounded-full bg-blue-900/60 group-hover:bg-blue-600 text-sky-300 group-hover:text-white flex items-center justify-center transition-all border border-blue-700/60">
+                            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                        </div>
+
+                        <h3 className="font-black text-white text-2xl group-hover:text-amber-300 transition-colors font-display">
+                          Lớp {c.name}
+                        </h3>
+                        <p className="text-xs text-sky-200/90 mt-1">
+                          Sĩ số: <strong className="text-white font-extrabold">{totalClassStudents}</strong> học sinh
+                        </p>
+
+                        {/* Huy hiệu trạng thái đánh giá tuần */}
+                        <div className="mt-2.5">
+                          {isAssessed ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-950 text-emerald-300 border border-emerald-700/70 shadow-xs">
+                              ✓ Đã có tiết Tuần {selectedWeek}
+                            </span>
+                          ) : isDraft ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-950 text-amber-300 border border-amber-600/70 shadow-xs">
+                              📝 Đang lưu tạm Tuần {selectedWeek}
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                              selectedWeek < currentCalendarWeek 
+                                ? 'bg-amber-950/80 text-amber-200 border border-amber-500/60' 
+                                : 'bg-slate-800 text-slate-300 border border-slate-700'
+                            }`}>
+                              {selectedWeek < currentCalendarWeek ? '⚡ Chưa đánh giá Tuần ' + selectedWeek + ' (Bổ sung)' : 'Chưa đánh giá Tuần ' + selectedWeek}
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      <h3 className="font-black text-white text-2xl group-hover:text-amber-300 transition-colors font-display">
-                        Lớp {c.name}
-                      </h3>
-                      <p className="text-xs text-sky-200/90 mt-1">
-                        Sĩ số: <strong className="text-white font-extrabold">{totalClassStudents}</strong> học sinh
-                      </p>
-                    </div>
-
-                    <div className="pt-2.5 border-t border-blue-800/70 text-xs text-sky-200/80 flex items-center justify-between">
-                      <span className="truncate">GVCN: <span className="font-bold text-white">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
-                      <span className="text-[11px] font-black text-sky-300 group-hover:text-amber-300 transition-colors flex items-center gap-0.5">
-                        Đánh giá →
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+                      <div className="pt-2.5 border-t border-blue-800/70 text-xs text-sky-200/80 flex items-center justify-between mt-3">
+                        <span className="truncate">GVCN: <span className="font-bold text-white">{c.homeroomTeacher || 'Chưa rõ'}</span></span>
+                        <span className="text-[11px] font-black text-sky-300 group-hover:text-amber-300 transition-colors flex items-center gap-0.5 shrink-0">
+                          {isAssessed ? 'Xem lại →' : isDraft ? 'Đánh giá tiếp →' : 'Đánh giá →'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -942,6 +1119,47 @@ export function LessonEvaluator({
             </div>
           )}
 
+          {/* Banner thông báo khi đang ĐÁNH GIÁ BỔ SUNG cho tuần trước */}
+          {selectedWeek < currentCalendarWeek && (
+            <div className="bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/10 border-2 border-amber-500/80 text-amber-200 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-xl bg-amber-500 text-slate-950 text-base font-black shadow-xs shrink-0">
+                  ⚡
+                </span>
+                <div>
+                  <p className="font-black text-sm text-amber-300 flex items-center gap-2">
+                    <span>ĐANG ĐÁNH GIÁ BỔ SUNG CHO TIẾT HỌC TUẦN {selectedWeek}</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-slate-950 uppercase">
+                      Đánh giá bù
+                    </span>
+                  </p>
+                  <p className="text-xs text-amber-100/90 mt-0.5">
+                    Hiện tại là Tuần {currentCalendarWeek}. Tiết học Tuần {selectedWeek} chưa kịp đánh giá đang được đánh giá bổ sung cho Lớp {currentClass?.name}.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs flex-wrap">
+                <span className="text-slate-300 font-semibold">Chọn nhanh ngày dạy:</span>
+                <button
+                  type="button"
+                  onClick={() => setLessonDate(getTimelineDateForWeek(selectedWeek))}
+                  className="px-2.5 py-1 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-200 font-bold border border-amber-600/50 cursor-pointer"
+                  title="Ghi nhận theo ngày chuẩn của tuần trước"
+                >
+                  📅 Ngày Tuần {selectedWeek} ({getTimelineDateForWeek(selectedWeek)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLessonDate(new Date().toISOString().split('T')[0])}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold border border-slate-600 cursor-pointer"
+                  title="Ghi nhận vào ngày hôm nay"
+                >
+                  ⚡ Hôm nay ({new Date().toISOString().split('T')[0]})
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Lesson Diary Entry - Tự động theo PPCT */}
           <div className="bg-slate-900 dark:bg-slate-950 p-5 rounded-2xl border border-slate-800 dark:border-slate-850 shadow-md space-y-4 text-white">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
@@ -986,7 +1204,17 @@ export function LessonEvaluator({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setSelectedWeek(prev => Math.max(1, prev - 1))}
+                    onClick={() => {
+                      const newW = Math.max(1, selectedWeek - 1);
+                      setSelectedWeek(newW);
+                      if (!editingLessonId) {
+                        setLessonDate(getTimelineDateForWeek(newW));
+                        if (selectedClassId) {
+                          const res = resolveLessonName(newW, selectedClassId);
+                          if (res) setLessonName(res);
+                        }
+                      }
+                    }}
                     disabled={selectedWeek <= 1}
                     className="h-10 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white border border-slate-700 transition-all flex items-center justify-center font-bold text-xs cursor-pointer shadow-xs shrink-0"
                     title="Tuần trước"
@@ -997,13 +1225,23 @@ export function LessonEvaluator({
                   <div className="relative flex-1">
                     <select
                       value={selectedWeek}
-                      onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                      onChange={(e) => {
+                        const newW = Number(e.target.value);
+                        setSelectedWeek(newW);
+                        if (!editingLessonId) {
+                          setLessonDate(getTimelineDateForWeek(newW));
+                          if (selectedClassId) {
+                            const res = resolveLessonName(newW, selectedClassId);
+                            if (res) setLessonName(res);
+                          }
+                        }
+                      }}
                       className="w-full h-10 px-3 py-1.5 text-center text-sm font-extrabold rounded-xl border border-blue-500/60 bg-blue-950/70 text-blue-200 outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer shadow-inner appearance-none"
                     >
                       <optgroup label="Học kỳ 1 (Tuần 1 - 18)">
                         {Array.from({ length: 18 }, (_, i) => i + 1).map((wNum) => (
                           <option key={wNum} value={wNum} className="bg-slate-900 text-white font-bold py-1">
-                            Tuần {wNum}
+                            Tuần {wNum} {wNum === 7 ? '(Tuần 7 - Đánh giá bổ sung)' : wNum === 8 ? '(Tuần 8 - Hiện tại)' : ''}
                           </option>
                         ))}
                       </optgroup>
@@ -1022,7 +1260,17 @@ export function LessonEvaluator({
 
                   <button
                     type="button"
-                    onClick={() => setSelectedWeek(prev => Math.min(35, prev + 1))}
+                    onClick={() => {
+                      const newW = Math.min(35, selectedWeek + 1);
+                      setSelectedWeek(newW);
+                      if (!editingLessonId) {
+                        setLessonDate(getTimelineDateForWeek(newW));
+                        if (selectedClassId) {
+                          const res = resolveLessonName(newW, selectedClassId);
+                          if (res) setLessonName(res);
+                        }
+                      }
+                    }}
                     disabled={selectedWeek >= 35}
                     className="h-10 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white border border-slate-700 transition-all flex items-center justify-center font-bold text-xs cursor-pointer shadow-xs shrink-0"
                     title="Tuần sau"
@@ -1032,24 +1280,62 @@ export function LessonEvaluator({
                 </div>
 
                 {/* Các nút chọn nhanh tuần */}
-                <div className="flex items-center justify-between gap-1 pt-1 text-[11px] text-slate-400">
+                <div className="flex items-center justify-between gap-1 pt-1 text-[11px] text-slate-400 flex-wrap">
                   <span className="font-semibold text-slate-400">Chọn nhanh:</span>
-                  <div className="flex items-center gap-1">
-                    {[1, 9, 18, 19, 35].map(w => (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {[
+                      { w: 7, label: 'T7 (Bổ sung)' },
+                      { w: 8, label: 'T8 (Hiện tại)' },
+                      { w: 1, label: 'T1' },
+                      { w: 9, label: 'T9' },
+                      { w: 18, label: 'T18' },
+                      { w: 19, label: 'T19' },
+                      { w: 35, label: 'T35' },
+                    ].map(item => (
                       <button
-                        key={w}
+                        key={item.w}
                         type="button"
-                        onClick={() => setSelectedWeek(w)}
+                        onClick={() => {
+                          setSelectedWeek(item.w);
+                          if (!editingLessonId) {
+                            setLessonDate(getTimelineDateForWeek(item.w));
+                            if (selectedClassId) {
+                              const res = resolveLessonName(item.w, selectedClassId);
+                              if (res) setLessonName(res);
+                            }
+                          }
+                        }}
                         className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
-                          selectedWeek === w
-                            ? 'bg-blue-600 text-white'
+                          selectedWeek === item.w
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : item.w === 7
+                            ? 'bg-amber-950 text-amber-300 border border-amber-600/50 hover:bg-amber-900'
                             : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                         }`}
                       >
-                        T{w}
+                        {item.label}
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Ô chọn Ngày giảng dạy - Giúp giáo viên chủ động chỉnh ngày dạy tuần trước */}
+                <div className="pt-2.5 border-t border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-bold text-slate-300 uppercase">
+                      Ngày giảng dạy:
+                    </label>
+                    <span className="text-[10px] font-semibold text-sky-400">
+                      {selectedWeek < currentCalendarWeek ? '⚡ Đánh giá bù' : 'Tiết hiện tại'}
+                    </span>
+                  </div>
+                  <input
+                    type="date"
+                    value={lessonDate}
+                    onChange={(e) => setLessonDate(e.target.value)}
+                    className="w-full h-9 px-3 text-xs font-bold rounded-xl border border-slate-700 bg-slate-900 text-white outline-none focus:border-blue-400 cursor-pointer shadow-inner"
+                    style={{ colorScheme: 'dark' }}
+                  />
                 </div>
               </div>
 
