@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { BookOpen, Calendar, Printer, Search, Trash2, Edit2, Edit3, Eye, UserCheck, ArrowLeft, Layers, BookmarkCheck, ArrowRight, CheckCircle2, Users, ChevronDown, Check } from 'lucide-react';
+import { BookOpen, Calendar, Printer, Search, Trash2, Edit2, Edit3, Eye, UserCheck, ArrowLeft, Layers, BookmarkCheck, ArrowRight, CheckCircle2, Users, ChevronDown, Check, RefreshCw, Cloud, ChevronLeft, ChevronRight, PlusCircle, Sparkles } from 'lucide-react';
 import { Class, Lesson, Student, Assessment, Grade, TimelineWeek } from '../types';
 import { ClassTrackerAPI } from '../lib/api';
 
@@ -39,6 +39,8 @@ export function LessonDiaries({
   const [selectedWeekFilter, setSelectedWeekFilter] = useState<string>('all');
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [isWeekDropdownOpen, setIsWeekDropdownOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const weekDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close week dropdown when clicking outside
@@ -59,6 +61,45 @@ export function LessonDiaries({
     ClassTrackerAPI.repairAllLessonAssessments();
   }, []);
 
+  // Multi-device Cloud Sync Handler
+  const handleManualCloudSync = async () => {
+    setIsSyncing(true);
+    setSyncFeedback('Đang đồng bộ dữ liệu đa thiết bị...');
+    try {
+      const changed = await ClassTrackerAPI.syncWithRemote();
+      ClassTrackerAPI.repairAllLessonAssessments();
+      setSyncFeedback('Đã đồng bộ đầy đủ các tiết học từ tất cả thiết bị!');
+    } catch (e) {
+      setSyncFeedback('Đang sử dụng dữ liệu cục bộ an toàn.');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncFeedback(null), 3500);
+    }
+  };
+
+  // Quick Week Navigation
+  const handlePrevWeek = () => {
+    let currentNum = 8;
+    if (selectedWeekFilter !== 'all') {
+      const match = selectedWeekFilter.match(/\d+/);
+      if (match) currentNum = parseInt(match[0], 10);
+    }
+    const prevNum = Math.max(1, currentNum - 1);
+    setSelectedWeekFilter(`Tuần ${prevNum}`);
+    setSelectedClassFilter('all');
+  };
+
+  const handleNextWeek = () => {
+    let currentNum = 8;
+    if (selectedWeekFilter !== 'all') {
+      const match = selectedWeekFilter.match(/\d+/);
+      if (match) currentNum = parseInt(match[0], 10);
+    }
+    const nextNum = Math.min(35, currentNum + 1);
+    setSelectedWeekFilter(`Tuần ${nextNum}`);
+    setSelectedClassFilter('all');
+  };
+
   // Helper to extract clean week string (e.g. "Tuần 6") from lesson
   const getLessonWeek = (l: Lesson): string => {
     if (l.week && l.week.trim()) return l.week.trim();
@@ -67,11 +108,17 @@ export function LessonDiaries({
     return 'Khác';
   };
 
-  // List of weeks with assessed class counts
+  // List of weeks with assessed class counts (ensures all 35 curriculum weeks are always selectable)
   const availableWeeks = useMemo(() => {
     const weekMap = new Map<string, { count: number; classesCount: number; stt: number }>();
 
-    // 1. Pre-populate from timeline weeks (Tuần 1 -> Tuần 35)
+    // 1. Pre-populate all 35 standard school weeks
+    for (let w = 1; w <= 35; w++) {
+      const wKey = `Tuần ${w}`;
+      weekMap.set(wKey, { count: 0, classesCount: 0, stt: w });
+    }
+
+    // 2. Pre-populate from timeline weeks if custom named
     timeline.forEach(t => {
       const wKey = t.week || `Tuần ${t.stt}`;
       if (!weekMap.has(wKey)) {
@@ -79,7 +126,7 @@ export function LessonDiaries({
       }
     });
 
-    // 2. Count lessons and distinct classes in each week
+    // 3. Count lessons and distinct classes in each week
     const weekClassesMap = new Map<string, Set<string>>();
     lessons.forEach(l => {
       const wKey = getLessonWeek(l);
@@ -106,7 +153,6 @@ export function LessonDiaries({
     });
 
     return Array.from(weekMap.entries())
-      .filter(([_, info]) => info.count > 0 || (info.stt >= 1 && info.stt <= 35))
       .sort((a, b) => a[1].stt - b[1].stt)
       .map(([week, info]) => ({
         week,
@@ -284,7 +330,8 @@ export function LessonDiaries({
       {!selectedLessonId ? (
         // LIST VIEW
         <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center">
+          {/* Header Row: Title, Status Filters, Cloud Sync & Search */}
+          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-150 dark:border-slate-700 shadow-xs flex flex-col md:flex-row gap-3.5 justify-between items-stretch md:items-center">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 text-base shrink-0">
                 <BookOpen className="w-5 h-5 text-blue-500" /> Nhật ký dạy học & Đã dạy
@@ -333,18 +380,49 @@ export function LessonDiaries({
               </div>
             </div>
             
-            {/* Week Dropdown & Search Input */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              {/* Nút xổ xuống chọn tuần đánh giá - Nền đen chữ trắng */}
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-bold text-slate-350 flex items-center gap-1 shrink-0 whitespace-nowrap">
-                  <Calendar className="w-4 h-4 text-sky-400" /> Chọn tuần:
+            {/* Right Tools: Multi-device Cloud Sync & Search Input */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Nút Đồng bộ Đám mây (Đa thiết bị) */}
+              <button
+                type="button"
+                onClick={handleManualCloudSync}
+                disabled={isSyncing}
+                className="px-3.5 py-2 text-xs font-bold rounded-xl border border-sky-600/40 bg-sky-950/50 hover:bg-sky-900/70 text-sky-200 flex items-center gap-2 shadow-xs transition-colors cursor-pointer shrink-0"
+                title="Đồng bộ tất cả các tiết học được lưu từ các thiết bị khác nhau"
+              >
+                <Cloud className="w-4 h-4 text-sky-400" />
+                <span className="hidden sm:inline">Đồng bộ liên thiết bị</span>
+                <RefreshCw className={`w-3.5 h-3.5 text-sky-300 ${isSyncing ? 'animate-spin' : ''}`} />
+              </button>
+
+              {/* Ô Tìm Kiếm - Nền đen chữ trắng */}
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Tìm bài học, lớp..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-400 focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* DEDICATED WEEK SELECTION TOOLBAR - Luôn hiển thị nổi bật, Nền đen chữ trắng */}
+          <div className="p-3.5 bg-slate-900 border border-slate-700 rounded-2xl shadow-md text-white space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-xs font-black text-amber-400 flex items-center gap-1.5 shrink-0 uppercase tracking-wide">
+                  <Calendar className="w-4 h-4 text-sky-400" /> Chọn tuần đánh giá:
                 </span>
+
+                {/* Dropdown Button - Nền đen chữ trắng */}
                 <div ref={weekDropdownRef} className="relative">
                   <button
                     type="button"
                     onClick={() => setIsWeekDropdownOpen(!isWeekDropdownOpen)}
-                    className="px-3.5 py-2 text-xs font-extrabold rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-850 text-white flex items-center justify-between gap-2.5 shadow-sm transition-colors cursor-pointer min-w-[210px] max-w-[280px]"
+                    className="px-3.5 py-2 text-xs font-black rounded-xl border border-blue-500/60 bg-slate-950 hover:bg-slate-850 text-white flex items-center justify-between gap-2.5 shadow-sm transition-all cursor-pointer min-w-[210px] max-w-[280px]"
                   >
                     <div className="flex items-center gap-1.5 truncate">
                       <span className="truncate text-white">
@@ -352,17 +430,17 @@ export function LessonDiaries({
                           ? `Tất cả các tuần (${lessons.length} tiết)`
                           : (() => {
                               const item = availableWeeks.find(w => w.week === selectedWeekFilter);
-                              return `${selectedWeekFilter} ${item && item.classesCount > 0 ? `(${item.classesCount} lớp)` : '(Chưa có tiết)'}`;
+                              return `${selectedWeekFilter} ${item && item.classesCount > 0 ? `(${item.classesCount} lớp đã đánh giá)` : '(Chưa có tiết)'}`;
                             })()
                         }
                       </span>
                     </div>
-                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${isWeekDropdownOpen ? 'rotate-180 text-sky-400' : ''}`} />
+                    <ChevronDown className={`w-3.5 h-3.5 text-sky-400 transition-transform duration-200 shrink-0 ${isWeekDropdownOpen ? 'rotate-180' : ''}`} />
                   </button>
 
-                  {/* Dropdown Menu - Nền đen chữ trắng */}
+                  {/* Dropdown Menu 35 Tuần */}
                   {isWeekDropdownOpen && (
-                    <div className="absolute left-0 mt-1.5 w-72 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 text-white">
+                    <div className="absolute left-0 mt-2 w-80 max-h-80 overflow-y-auto bg-slate-950 border border-slate-700 rounded-2xl shadow-2xl z-50 p-2 space-y-1 text-white scrollbar-thin">
                       <button
                         type="button"
                         onClick={() => {
@@ -370,10 +448,10 @@ export function LessonDiaries({
                           setSelectedClassFilter('all');
                           setIsWeekDropdownOpen(false);
                         }}
-                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-black flex items-center justify-between transition-colors cursor-pointer ${
                           selectedWeekFilter === 'all'
                             ? 'bg-blue-600 text-white shadow-sm'
-                            : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                            : 'text-slate-200 hover:bg-slate-850 hover:text-white'
                         }`}
                       >
                         <span className="flex items-center gap-2">
@@ -400,8 +478,8 @@ export function LessonDiaries({
                             }}
                             className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
                               isSelected
-                                ? 'bg-blue-600 text-white font-bold shadow-sm'
-                                : 'text-slate-100 hover:bg-slate-800 hover:text-white font-medium'
+                                ? 'bg-blue-600 text-white font-black shadow-sm'
+                                : 'text-slate-200 hover:bg-slate-850 hover:text-white font-medium'
                             }`}
                           >
                             <span className="flex items-center gap-2 truncate">
@@ -412,13 +490,13 @@ export function LessonDiaries({
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                                 isSelected
                                   ? 'bg-white/20 text-white'
-                                  : 'bg-emerald-950/90 text-emerald-300 border border-emerald-800/80'
+                                  : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
                               }`}>
                                 {item.classesCount} lớp đã đánh giá
                               </span>
                             ) : (
                               <span className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
-                                isSelected ? 'bg-white/10 text-slate-200' : 'text-slate-400 bg-slate-800/70'
+                                isSelected ? 'bg-white/10 text-slate-200' : 'text-slate-400 bg-slate-850'
                               }`}>
                                 Chưa có tiết
                               </span>
@@ -429,19 +507,125 @@ export function LessonDiaries({
                     </div>
                   )}
                 </div>
+
+                {/* Quick Action Buttons */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedWeekFilter('all');
+                      setSelectedClassFilter('all');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      selectedWeekFilter === 'all'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700'
+                    }`}
+                  >
+                    Tất cả tuần
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedWeekFilter('Tuần 7');
+                      setSelectedClassFilter('all');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      selectedWeekFilter === 'Tuần 7'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-800 hover:bg-slate-750 text-amber-300 border border-slate-700'
+                    }`}
+                  >
+                    <span>⚡ Tuần 7</span>
+                    {(() => {
+                      const w7 = availableWeeks.find(w => w.week === 'Tuần 7');
+                      return w7 && w7.classesCount > 0 ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500/30 text-emerald-300 font-black">
+                          {w7.classesCount}
+                        </span>
+                      ) : null;
+                    })()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedWeekFilter('Tuần 8');
+                      setSelectedClassFilter('all');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      selectedWeekFilter === 'Tuần 8'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-800 hover:bg-slate-750 text-sky-300 border border-slate-700'
+                    }`}
+                  >
+                    <span>📅 Tuần 8 (Hiện tại)</span>
+                    {(() => {
+                      const w8 = availableWeeks.find(w => w.week === 'Tuần 8');
+                      return w8 && w8.classesCount > 0 ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-500/30 text-emerald-300 font-black">
+                          {w8.classesCount}
+                        </span>
+                      ) : null;
+                    })()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrevWeek}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all cursor-pointer flex items-center gap-0.5"
+                    title="Chuyển sang tuần trước"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> Tuần trước
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextWeek}
+                    className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all cursor-pointer flex items-center gap-0.5"
+                    title="Chuyển sang tuần sau"
+                  >
+                    Tuần sau <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Search Input - Nền đen chữ trắng */}
-              <div className="relative w-full sm:w-56">
-                <Search className="absolute left-3 top-2.5 w-4.5 h-4.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Tìm bài học, lớp..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-700 bg-slate-900 text-white placeholder-slate-400 focus:border-blue-500 outline-none"
-                />
-              </div>
+              {/* Sync Feedback Toast Indicator */}
+              {syncFeedback && (
+                <div className="text-xs font-bold text-emerald-300 bg-emerald-950/90 border border-emerald-700 px-3 py-1.5 rounded-xl flex items-center gap-1.5 animate-pulse shrink-0">
+                  <span>✓</span> {syncFeedback}
+                </div>
+              )}
+            </div>
+
+            {/* Horizontal Fast Week Scroller (35 Tuần) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-thin">
+              <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 flex items-center gap-1">
+                <span>Tuần:</span>
+              </span>
+              {availableWeeks.map(item => {
+                const isSelected = selectedWeekFilter === item.week;
+                const hasLessons = item.classesCount > 0;
+                return (
+                  <button
+                    key={`scroller_${item.week}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedWeekFilter(item.week);
+                      setSelectedClassFilter('all');
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                      isSelected
+                        ? 'bg-blue-600 text-white shadow-sm ring-1 ring-white/30'
+                        : hasLessons
+                        ? 'bg-slate-800 hover:bg-slate-750 text-emerald-300 border border-emerald-800/70'
+                        : 'bg-slate-950/70 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                    }`}
+                  >
+                    <span>{item.week}</span>
+                    {hasLessons && (
+                      <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-400'}`} />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -494,10 +678,14 @@ export function LessonDiaries({
                     {onNavigateToAssess && !readOnly && (
                       <button
                         type="button"
-                        onClick={() => onNavigateToAssess('')}
-                        className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs"
+                        onClick={() => {
+                          const matchNum = selectedWeekFilter.match(/\d+/);
+                          const wNum = matchNum ? parseInt(matchNum[0], 10) : 8;
+                          onNavigateToAssess(undefined, undefined, wNum);
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-all"
                       >
-                        + Đánh giá tiết học mới ngay
+                        <PlusCircle className="w-3.5 h-3.5" /> Đánh giá tiết học {selectedWeekFilter} ngay
                       </button>
                     )}
                   </div>

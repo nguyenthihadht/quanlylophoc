@@ -4,7 +4,7 @@
  */
 
 import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SystemBackup, SemesterScore, TimelineWeek, WheelSpinRecord, EvaluationLevel } from '../types';
-import { loadStateFromFirestore, saveStateToFirestore } from './firebase';
+import { loadStateFromFirestore, saveStateToFirestore, setupRealtimeSync } from './firebase';
 
 function generateUniqueId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -36,6 +36,8 @@ export class ClassTrackerAPI {
   private static cache: typeof DEFAULT_STATE = { ...DEFAULT_STATE };
   private static isLoaded = false;
   private static onStateChangeListeners: (() => void)[] = [];
+  private static realtimeUnsubscribe: (() => void) | null = null;
+  private static isSyncing = false;
 
   // Register listener for reactive updates
   public static subscribe(listener: () => void) {
@@ -132,6 +134,109 @@ export class ClassTrackerAPI {
     return false;
   }
 
+  // Multi-Device Non-Destructive Merge:
+  // Merges remote state into local cache without overwriting new local edits
+  private static mergeIncomingState(remote: Partial<typeof DEFAULT_STATE>): boolean {
+    if (!remote) return false;
+    let hasChanges = false;
+
+    // 1. Merge Lessons across devices
+    if (Array.isArray(remote.lessons) && remote.lessons.length > 0) {
+      const currentLessons = this.cache.lessons || [];
+      const lessonMap = new Map<string, Lesson>();
+
+      // Add remote lessons first
+      remote.lessons.forEach(l => {
+        if (l && l.id) lessonMap.set(l.id, l);
+      });
+
+      // Add/preserve local lessons
+      currentLessons.forEach(l => {
+        if (l && l.id) {
+          const existing = lessonMap.get(l.id);
+          if (!existing) {
+            lessonMap.set(l.id, l);
+          } else {
+            // Keep local changes if existing
+            lessonMap.set(l.id, { ...existing, ...l });
+          }
+        }
+      });
+
+      const mergedLessons = Array.from(lessonMap.values());
+      if (mergedLessons.length !== currentLessons.length || JSON.stringify(mergedLessons) !== JSON.stringify(currentLessons)) {
+        this.cache.lessons = mergedLessons;
+        hasChanges = true;
+      }
+    }
+
+    // 2. Merge Assessments across devices
+    if (Array.isArray(remote.assessments) && remote.assessments.length > 0) {
+      const currentAssessments = this.cache.assessments || [];
+      const assessMap = new Map<string, Assessment>();
+
+      remote.assessments.forEach(a => {
+        if (a && a.id) assessMap.set(a.id, a);
+        else if (a && a.lessonId && a.studentId) assessMap.set(`${a.lessonId}_${a.studentId}`, a);
+      });
+
+      currentAssessments.forEach(a => {
+        if (a && a.id) assessMap.set(a.id, a);
+        else if (a && a.lessonId && a.studentId) assessMap.set(`${a.lessonId}_${a.studentId}`, a);
+      });
+
+      const mergedAssessments = Array.from(assessMap.values());
+      if (mergedAssessments.length !== currentAssessments.length) {
+        this.cache.assessments = mergedAssessments;
+        hasChanges = true;
+      }
+    }
+
+    // 3. Merge metadata (classes, students, timeline) if provided
+    if (Array.isArray(remote.classes) && remote.classes.length > (this.cache.classes?.length || 0)) {
+      this.cache.classes = remote.classes;
+      hasChanges = true;
+    }
+    if (Array.isArray(remote.students) && remote.students.length > (this.cache.students?.length || 0)) {
+      this.cache.students = remote.students;
+      hasChanges = true;
+    }
+    if (Array.isArray(remote.timeline) && remote.timeline.length > (this.cache.timeline?.length || 0)) {
+      this.cache.timeline = remote.timeline;
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      try {
+        localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
+      } catch (e) {
+        console.warn('Could not update localStorage on merge:', e);
+      }
+      this.notify();
+    }
+
+    return hasChanges;
+  }
+
+  // Multi-device Remote Sync: pull latest changes and merge seamlessly
+  public static async syncWithRemote(): Promise<boolean> {
+    if (this.isSyncing) return false;
+    this.isSyncing = true;
+    try {
+      const remoteState = await loadStateFromFirestore();
+      if (remoteState && Object.keys(remoteState).length > 0) {
+        const changed = this.mergeIncomingState(remoteState);
+        this.repairAllLessonAssessments();
+        return changed;
+      }
+    } catch (err) {
+      console.warn('Background sync with remote encountered error:', err);
+    } finally {
+      this.isSyncing = false;
+    }
+    return false;
+  }
+
   // Load complete state from Firestore (with server and LocalStorage as robust fallbacks)
   public static async init() {
     // 1. Try Firestore first
@@ -144,6 +249,7 @@ export class ClassTrackerAPI {
         this.repairAllLessonAssessments();
         localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
         this.notify();
+        this.setupBackgroundSync();
         return this.cache;
       }
     } catch (error) {
@@ -162,6 +268,7 @@ export class ClassTrackerAPI {
         // Save to LocalStorage as a local backup copy
         localStorage.setItem('class_tracker_backup', JSON.stringify(data));
         this.notify();
+        this.setupBackgroundSync();
         return this.cache;
       }
     } catch (error) {
@@ -177,6 +284,7 @@ export class ClassTrackerAPI {
         this.sanitizeDuplicateStudentIds();
         this.repairAllLessonAssessments();
         this.notify();
+        this.setupBackgroundSync();
         return this.cache;
       } catch (e) {
         console.error('Failed to parse localStorage data', e);
@@ -188,7 +296,38 @@ export class ClassTrackerAPI {
     this.isLoaded = true;
     this.sanitizeDuplicateStudentIds();
     this.notify();
+    this.setupBackgroundSync();
     return this.cache;
+  }
+
+  private static setupBackgroundSync() {
+    if (typeof window === 'undefined') return;
+
+    // 1. Real-time Firestore sync
+    if (!this.realtimeUnsubscribe) {
+      this.realtimeUnsubscribe = setupRealtimeSync(async (remoteLessons) => {
+        if (Array.isArray(remoteLessons)) {
+          // If remote lessons changed, pull full remote state to get matching assessments
+          await this.syncWithRemote();
+        }
+      });
+    }
+
+    // 2. Sync on browser tab focus / visibility
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        this.syncWithRemote();
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      this.syncWithRemote();
+    });
+
+    // 3. Periodic sync every 25 seconds
+    setInterval(() => {
+      this.syncWithRemote();
+    }, 25000);
   }
 
   private static isPersisting = false;
@@ -217,9 +356,20 @@ export class ClassTrackerAPI {
         // Take a clean snapshot of the latest cache to avoid mutations during flight
         const snapshot = JSON.parse(JSON.stringify(this.cache));
 
-        // 1. Save to Firestore
+        // 1. Save to Firestore with multi-device merging
         try {
-          await saveStateToFirestore(snapshot);
+          const res = await saveStateToFirestore(snapshot, { mergeWithRemote: true });
+          if (res.success && res.mergedLessons) {
+            // Update cache with merged remote + local lessons so local cache stays unified
+            this.cache.lessons = res.mergedLessons;
+            if (res.mergedAssessments) {
+              this.cache.assessments = res.mergedAssessments;
+            }
+            try {
+              localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
+            } catch (_) {}
+            this.notify();
+          }
         } catch (error) {
           console.warn('Failed to sync state to Firestore:', error);
         }
@@ -229,7 +379,7 @@ export class ClassTrackerAPI {
           await fetch('/api/db', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(snapshot)
+            body: JSON.stringify(this.cache)
           });
         } catch (e) {
           console.warn('Failed to sync state to server, saved locally in browser and Firestore', e);
@@ -248,8 +398,16 @@ export class ClassTrackerAPI {
   // Manually push current local state to Firebase Firestore
   public static async forceSyncToFirestore(): Promise<boolean> {
     try {
-      const success = await saveStateToFirestore(this.cache);
-      return success;
+      const res = await saveStateToFirestore(this.cache, { mergeWithRemote: true });
+      if (res.success && res.mergedLessons) {
+        this.cache.lessons = res.mergedLessons;
+        if (res.mergedAssessments) {
+          this.cache.assessments = res.mergedAssessments;
+        }
+        localStorage.setItem('class_tracker_backup', JSON.stringify(this.cache));
+        this.notify();
+      }
+      return res.success;
     } catch (e) {
       console.error('Failed manual sync to Firestore:', e);
       return false;
@@ -262,6 +420,7 @@ export class ClassTrackerAPI {
       const firestoreData = await loadStateFromFirestore();
       if (firestoreData && Object.keys(firestoreData).length > 0) {
         this.cache = firestoreData;
+        this.repairAllLessonAssessments();
         this.notify();
         localStorage.setItem('class_tracker_backup', JSON.stringify(firestoreData));
         return true;

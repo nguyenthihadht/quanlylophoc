@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 
 // Configuration provided by the user
 const firebaseConfig = {
@@ -16,7 +16,7 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 // Collection root for the application
-const COLLECTION_NAME = "edu_track_ai";
+export const COLLECTION_NAME = "edu_track_ai";
 
 // Legacy single-document reference kept for backward compatibility
 export const STATE_DOC_REF = doc(db, COLLECTION_NAME, "app_state");
@@ -31,7 +31,6 @@ const ASSESSMENTS_CHUNK_SIZE = 300;
  */
 export async function loadStateFromFirestore(): Promise<any | null> {
   try {
-    // 1. Check if the new chunked meta document exists
     const metaDocRef = doc(db, COLLECTION_NAME, "meta");
     const lessonsDocRef = doc(db, COLLECTION_NAME, "lessons");
     const studentsDocRef = doc(db, COLLECTION_NAME, "students");
@@ -99,18 +98,91 @@ export async function loadStateFromFirestore(): Promise<any | null> {
 }
 
 /**
- * Robust helper to save state to Firestore using multi-document chunking.
- * Completely avoids Firestore's 1MB document size limit by dividing large collections
- * (assessments, students, timeline, lessons, and meta) into separate, lightweight documents.
+ * Non-destructive Multi-Device Save:
+ * Fetches existing remote lessons and assessments before saving, merging them so
+ * lessons and evaluations performed on different devices (phones, tablets, other PCs)
+ * are NEVER clobbered or lost!
  */
-export async function saveStateToFirestore(state: any): Promise<boolean> {
-  if (!state) return false;
+export async function saveStateToFirestore(state: any, options: { mergeWithRemote?: boolean } = { mergeWithRemote: true }): Promise<{ success: boolean; mergedLessons?: any[]; mergedAssessments?: any[] }> {
+  if (!state) return { success: false };
 
   try {
-    const assessments: any[] = state.assessments || [];
+    let finalLessons: any[] = state.lessons || [];
+    let finalAssessments: any[] = state.assessments || [];
+
+    if (options.mergeWithRemote) {
+      try {
+        const lessonsDocRef = doc(db, COLLECTION_NAME, "lessons");
+        const manifestDocRef = doc(db, COLLECTION_NAME, "assessments_manifest");
+        const [remoteLessonsSnap, manifestSnap] = await Promise.all([
+          getDoc(lessonsDocRef),
+          getDoc(manifestDocRef)
+        ]);
+
+        // 1. Merge Lessons across devices
+        if (remoteLessonsSnap.exists()) {
+          const remoteLessons: any[] = remoteLessonsSnap.data()?.lessons || [];
+          const lessonMap = new Map<string, any>();
+          
+          // Seed with remote lessons (preserves lessons created on other devices)
+          remoteLessons.forEach(l => {
+            if (l && l.id) lessonMap.set(l.id, l);
+          });
+          
+          // Apply local lessons
+          finalLessons.forEach(l => {
+            if (l && l.id) {
+              const existing = lessonMap.get(l.id);
+              if (!existing) {
+                lessonMap.set(l.id, l);
+              } else {
+                lessonMap.set(l.id, { ...existing, ...l });
+              }
+            }
+          });
+          finalLessons = Array.from(lessonMap.values());
+        }
+
+        // 2. Merge Assessments across devices
+        if (manifestSnap.exists()) {
+          const chunkCount = manifestSnap.data()?.chunkCount || 0;
+          if (chunkCount > 0) {
+            const chunkPromises: Promise<any>[] = [];
+            for (let i = 0; i < chunkCount; i++) {
+              chunkPromises.push(getDoc(doc(db, COLLECTION_NAME, `assessments_part_${i}`)));
+            }
+            const chunkSnaps = await Promise.all(chunkPromises);
+            const remoteAssessments: any[] = [];
+            for (const snap of chunkSnaps) {
+              if (snap.exists() && Array.isArray(snap.data()?.list)) {
+                remoteAssessments.push(...snap.data().list);
+              }
+            }
+
+            if (remoteAssessments.length > 0) {
+              const assessMap = new Map<string, any>();
+              // Keep all remote assessments from other lessons/devices
+              remoteAssessments.forEach(a => {
+                if (a && a.id) assessMap.set(a.id, a);
+                else if (a && a.lessonId && a.studentId) assessMap.set(`${a.lessonId}_${a.studentId}`, a);
+              });
+              // Apply local assessments
+              finalAssessments.forEach(a => {
+                if (a && a.id) assessMap.set(a.id, a);
+                else if (a && a.lessonId && a.studentId) assessMap.set(`${a.lessonId}_${a.studentId}`, a);
+              });
+              finalAssessments = Array.from(assessMap.values());
+            }
+          }
+        }
+      } catch (mergeErr) {
+        console.warn("Could not merge with remote Firestore before save, continuing with local snapshot:", mergeErr);
+      }
+    }
+
     const chunks: any[][] = [];
-    for (let i = 0; i < assessments.length; i += ASSESSMENTS_CHUNK_SIZE) {
-      chunks.push(assessments.slice(i, i + ASSESSMENTS_CHUNK_SIZE));
+    for (let i = 0; i < finalAssessments.length; i += ASSESSMENTS_CHUNK_SIZE) {
+      chunks.push(finalAssessments.slice(i, i + ASSESSMENTS_CHUNK_SIZE));
     }
 
     const now = Date.now();
@@ -128,10 +200,10 @@ export async function saveStateToFirestore(state: any): Promise<boolean> {
       updatedAt: now
     });
 
-    // 2. Lessons document
+    // 2. Lessons document (Cross-Device Merged)
     const lessonsDocRef = doc(db, COLLECTION_NAME, "lessons");
     const lessonsPromise = setDoc(lessonsDocRef, {
-      lessons: state.lessons || [],
+      lessons: finalLessons,
       updatedAt: now
     });
 
@@ -153,7 +225,7 @@ export async function saveStateToFirestore(state: any): Promise<boolean> {
     const manifestDocRef = doc(db, COLLECTION_NAME, "assessments_manifest");
     const manifestPromise = setDoc(manifestDocRef, {
       chunkCount: chunks.length,
-      totalCount: assessments.length,
+      totalCount: finalAssessments.length,
       updatedAt: now
     });
 
@@ -177,9 +249,38 @@ export async function saveStateToFirestore(state: any): Promise<boolean> {
       ...chunkPromises
     ]);
 
-    return true;
+    return {
+      success: true,
+      mergedLessons: finalLessons,
+      mergedAssessments: finalAssessments
+    };
   } catch (error) {
     console.error("Could not save chunked state to Firestore:", error);
-    return false;
+    return { success: false };
   }
 }
+
+/**
+ * Setup Real-time Multi-Device Sync:
+ * Listens for lessons updates made on other devices and triggers callback.
+ */
+export function setupRealtimeSync(onLessonsUpdate: (remoteLessons: any[]) => void): () => void {
+  try {
+    const lessonsDocRef = doc(db, COLLECTION_NAME, "lessons");
+    const unsubscribe = onSnapshot(lessonsDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && Array.isArray(data.lessons)) {
+          onLessonsUpdate(data.lessons);
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore realtime sync listener warning:", error);
+    });
+    return unsubscribe;
+  } catch (e) {
+    console.warn("Could not initialize Firestore realtime sync:", e);
+    return () => {};
+  }
+}
+

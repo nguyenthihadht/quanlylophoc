@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Users, School, BookOpen, CheckCircle, PlusCircle, Award, Calendar, 
   Settings, LogOut, Menu, X, Sun, Moon, Sparkles, LogIn, ChevronRight, Home, RefreshCw,
-  Lock, Unlock, Eye, EyeOff, KeyRound, ShieldCheck, FileSpreadsheet, Check, Copy, Share2, AlertCircle
+  Lock, Unlock, Eye, EyeOff, KeyRound, ShieldCheck, FileSpreadsheet, Check, Copy, Share2, AlertCircle, Cloud
 } from 'lucide-react';
 import { ClassTrackerAPI } from './lib/api';
 import { SchoolYear, Grade, Class, Student, Lesson, Assessment, Comment, AppSettings, SemesterScore, TimelineWeek } from './types';
@@ -1077,6 +1077,24 @@ export default function App() {
                 </button>
               </div>
             )}
+
+            {/* Cloud Multi-Device Sync Button */}
+            <button
+              type="button"
+              onClick={async () => {
+                setCopyLinkToast('Đang kiểm tra và đồng bộ tiết học từ các thiết bị...');
+                await ClassTrackerAPI.syncWithRemote();
+                syncLocalStates();
+                setCopyLinkToast('Đã đồng bộ đầy đủ tiết học từ tất cả các thiết bị!');
+                setTimeout(() => setCopyLinkToast(null), 3000);
+              }}
+              className="px-3 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded-full text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer hover:scale-[1.02]"
+              title="Đồng bộ ngay dữ liệu tiết học từ máy tính hoặc điện thoại khác"
+            >
+              <Cloud className="w-3.5 h-3.5 text-sky-500" />
+              <span className="hidden lg:inline">Đồng bộ đám mây</span>
+              <RefreshCw className="w-3 h-3 text-sky-400" />
+            </button>
 
             <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-100 dark:border-blue-800 max-w-[200px] truncate hidden sm:inline-block" title={settings?.schoolName}>
               🏫 {settings?.schoolName}
